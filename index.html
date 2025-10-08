@@ -367,10 +367,11 @@
         }
         .modal-input:focus {
             outline: none;
-            border-color: var(--accent-color);
-            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
         }
         .modal-input.is-invalid {
+            border-color: var(--danger-color);
+        }
+        .modal-input.is-invalid:focus {
             border-color: var(--danger-color);
         }
         .invalid-feedback {
@@ -864,6 +865,19 @@
                             DOM.modalInputsContainer.appendChild(createModalField(field, initialValues[field.id]));
                         }
                     });
+
+                    const nameInput = DOM.modalInputsContainer.querySelector('#name');
+                    const paxInput = DOM.modalInputsContainer.querySelector('#pax');
+
+                    if (nameInput && paxInput) {
+                        nameInput.addEventListener('input', () => {
+                            if (nameInput.value.trim() !== '' && (paxInput.value.trim() === '' || paxInput.value.trim() === '0')) {
+                                paxInput.value = '1';
+                                paxInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+                        });
+                    }
+                    
                     if (isEdit) {
                         const docContainer = document.getElementById('document-fields-container');
                         const fpcsContainer = document.getElementById('fpcs-fields-container');
@@ -1078,6 +1092,10 @@
                     }
                 });
 
+                if (formValues.name && (!formValues.pax || formValues.pax === '0')) {
+                    formValues.pax = '1';
+                }
+
                 showModal({
                     isEdit: true,
                     title: `Edit: ${tenant.name || `Unit ${tenant.unit}`}`,
@@ -1100,10 +1118,10 @@
                         { id: 'waterPrev', label: 'Water Previous (m³)', type: 'number' },
                     ],
                     initialValues: formValues,
-                    requiredFields: ['name', 'leaseStart', 'tenure', 'rent'],
+                    requiredFields: ['name', 'leaseStart', 'tenure', 'rent', 'pax'],
                     validationRules: [
                         { fieldId: 'rent', validator: (val) => parseFloat(val) >= 0, message: 'Rent cannot be negative.' },
-                        { fieldId: 'pax', validator: (val) => parseFloat(val) >= 0, message: 'Pax cannot be negative.' }
+                        { fieldId: 'pax', validator: (val) => parseFloat(val) > 0, message: 'Pax must be at least 1.' }
                     ],
                     onSave: (newValues) => {
                         const { leaseStart, tenure } = newValues;
@@ -1340,12 +1358,12 @@
             }
             
             function init() {
-                // 1. Load from local cache for instant UI
                 loadStateFromLocalStorage();
                 render();
                 
-                // 2. Sync with Google Sheets in the background
                 loadDataFromSheet();
+
+                setInterval(loadDataFromSheet, 30000); 
 
                 DOM.sectionsContainer.addEventListener('click', (event) => {
                     const target = event.target;
@@ -1415,4 +1433,3 @@
     </script>
 </body>
 </html>
-
