@@ -569,6 +569,28 @@
                 currentlyEditingTenantId: null,
             };
 
+             function saveStateToLocalStorage() {
+                try {
+                    const stateToSave = { rates: state.rates, sections: state.sections };
+                    localStorage.setItem('tenantAppData', JSON.stringify(stateToSave));
+                } catch (e) {
+                    console.error("Error saving state to localStorage", e);
+                }
+            }
+
+            function loadStateFromLocalStorage() {
+                try {
+                    const savedState = localStorage.getItem('tenantAppData');
+                    if (savedState) {
+                        const parsedState = JSON.parse(savedState);
+                        Object.assign(state, parsedState);
+                    }
+                } catch (e) {
+                    console.error("Error loading state from localStorage", e);
+                }
+            }
+
+
             // #################################################################
             // ## CONCEPTUAL MODULE: ui.js & API
             // #################################################################
@@ -587,30 +609,15 @@
 
             const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxoNBzSqC6pR4QuRTDlxsBOYUj5180vCz1KbeRbWb3P21OLW4ne28XV7HZvhfCbeqpf/exec";
 
-            function showLoading(isLoading) {
-                DOM.addSectionBtn.disabled = isLoading;
-                DOM.setRateBtn.disabled = isLoading;
-                DOM.addSectionBtn.textContent = isLoading ? "Loading..." : "+ add section";
-            }
-
             function formatDate(isoString) {
-                // Handle empty, null, or undefined inputs.
-                if (!isoString) {
-                    return "";
-                }
-                // Create a date object. This works for both "YYYY-MM-DD" and full ISO strings.
+                if (!isoString) { return ""; }
                 const date = new Date(isoString);
-                // Check if the created date is valid.
-                if (isNaN(date.getTime())) {
-                    return ""; // Return empty string for invalid dates like "NaN-NaN-NaN".
-                }
-                // Use UTC methods to avoid timezone-related display errors.
+                if (isNaN(date.getTime())) { return ""; }
                 const day = String(date.getUTCDate()).padStart(2, '0');
                 const month = String(date.getUTCMonth() + 1).padStart(2, '0');
                 const year = date.getUTCFullYear();
                 return `${day}-${month}-${year}`;
             }
-
 
             function isDateExpiring(isoDateString) {
                 if (!isoDateString) return false;
@@ -622,7 +629,6 @@
                 const thirtyDaysFromNow = new Date(today);
                 thirtyDaysFromNow.setUTCDate(today.getUTCDate() + 30);
 
-                // We need to create a UTC date from the input to compare it correctly
                 const inputDateUTC = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
                 
                 return inputDateUTC <= thirtyDaysFromNow && inputDateUTC >= today;
@@ -959,33 +965,41 @@
             // #################################################################
             
             async function loadDataFromSheet() {
-                showLoading(true);
+                console.log("Fetching data from Google Sheet...");
                 try {
                     const response = await fetch(SCRIPT_URL);
                     if (!response.ok) throw new Error("Failed to load data from sheet.");
-                    const data = await response.json();
+                    const freshData = await response.json();
                     
-                    state.rates = data.rates && Object.keys(data.rates).length > 0 ? data.rates : state.rates;
-                    state.sections = data.sections && data.sections.length > 0 ? data.sections : state.sections;
+                    const currentDataSignature = JSON.stringify({ rates: state.rates, sections: state.sections });
+                    const freshDataSignature = JSON.stringify(freshData);
 
-                    if (state.sections.length > 0) {
-                        const allTenantIds = state.sections.flatMap(s => s.tenants.map(t => t.id));
-                        state.nextTenantId = Math.max(0, ...allTenantIds) + 1;
-                        const allSectionIds = state.sections.map(s => s.id);
-                        state.nextSectionId = Math.max(0, ...allSectionIds) + 1;
+                    if (currentDataSignature !== freshDataSignature) {
+                        console.log("New data found from Google Sheet. Refreshing UI.");
+                        state.rates = freshData.rates && Object.keys(freshData.rates).length > 0 ? freshData.rates : state.rates;
+                        state.sections = freshData.sections && freshData.sections.length > 0 ? freshData.sections : state.sections;
+
+                        if (state.sections.length > 0) {
+                            const allTenantIds = state.sections.flatMap(s => s.tenants.map(t => t.id));
+                            state.nextTenantId = Math.max(0, ...allTenantIds) + 1;
+                            const allSectionIds = state.sections.map(s => s.id);
+                            state.nextSectionId = Math.max(0, ...allSectionIds) + 1;
+                        }
+                        
+                        saveStateToLocalStorage();
+                        render();
+                    } else {
+                        console.log("Local cache is up-to-date.");
                     }
 
-                    render();
                 } catch (error) {
-                    console.error("Error loading data:", error);
-                    alert("Could not load data from Google Sheet. Please check the URL, script permissions, and your internet connection.");
-                } finally {
-                    showLoading(false);
+                    console.error("Could not sync with Google Sheet, running from local cache:", error);
                 }
             }
 
             async function saveDataToSheet() {
-                // You could add a "Saving..." indicator here for better UX
+                saveStateToLocalStorage(); 
+                console.log("Syncing data to Google Sheet in the background...");
                 try {
                     await fetch(SCRIPT_URL, {
                         method: 'POST',
@@ -993,10 +1007,9 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(state)
                     });
-                    console.log("Save successful");
+                    console.log("Sync successful.");
                 } catch (error) {
-                    console.error("Error saving data:", error);
-                    alert("Could not save data to Google Sheet.");
+                    console.error("Error syncing data to Google Sheet:", error);
                 }
             }
 
@@ -1057,6 +1070,14 @@
                 const { tenant } = findTenant(tenantId);
                 if (!tenant) return;
 
+                const formValues = { ...tenant };
+                const dateFields = ['leaseStart', 'idExpiry', 'passportExpiry', 'visaExpiry', 'currentBillingDate'];
+                dateFields.forEach(field => {
+                    if (formValues[field]) {
+                        formValues[field] = formValues[field].split('T')[0];
+                    }
+                });
+
                 showModal({
                     isEdit: true,
                     title: `Edit: ${tenant.name || `Unit ${tenant.unit}`}`,
@@ -1078,7 +1099,7 @@
                         { id: 'elecPrev', label: 'Electricity Previous (Kwh)', type: 'number' },
                         { id: 'waterPrev', label: 'Water Previous (m³)', type: 'number' },
                     ],
-                    initialValues: tenant,
+                    initialValues: formValues,
                     requiredFields: ['name', 'leaseStart', 'tenure', 'rent'],
                     validationRules: [
                         { fieldId: 'rent', validator: (val) => parseFloat(val) >= 0, message: 'Rent cannot be negative.' },
@@ -1319,6 +1340,13 @@
             }
             
             function init() {
+                // 1. Load from local cache for instant UI
+                loadStateFromLocalStorage();
+                render();
+                
+                // 2. Sync with Google Sheets in the background
+                loadDataFromSheet();
+
                 DOM.sectionsContainer.addEventListener('click', (event) => {
                     const target = event.target;
                     const tenantItem = target.closest('.tenant-item');
@@ -1381,8 +1409,6 @@
                         event.target.closest('.vehicle-input-group').remove();
                     }
                 });
-                
-                loadDataFromSheet();
             }
             document.addEventListener('DOMContentLoaded', init);
         })();
