@@ -594,34 +594,52 @@
             }
 
             function formatDate(isoString) {
-                if (!isoString) return "";
-                const date = new Date(isoString + 'T00:00:00Z');
+                // Handle empty, null, or undefined inputs.
+                if (!isoString) {
+                    return "";
+                }
+                // Create a date object. This works for both "YYYY-MM-DD" and full ISO strings.
+                const date = new Date(isoString);
+                // Check if the created date is valid.
+                if (isNaN(date.getTime())) {
+                    return ""; // Return empty string for invalid dates like "NaN-NaN-NaN".
+                }
+                // Use UTC methods to avoid timezone-related display errors.
                 const day = String(date.getUTCDate()).padStart(2, '0');
                 const month = String(date.getUTCMonth() + 1).padStart(2, '0');
                 const year = date.getUTCFullYear();
                 return `${day}-${month}-${year}`;
             }
 
+
             function isDateExpiring(isoDateString) {
                 if (!isoDateString) return false;
-                const date = new Date(isoDateString + 'T00:00:00Z');
+                const date = new Date(isoDateString);
+                if (isNaN(date.getTime())) return false;
+                
                 const now = new Date();
                 const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
                 const thirtyDaysFromNow = new Date(today);
                 thirtyDaysFromNow.setUTCDate(today.getUTCDate() + 30);
-                return date <= thirtyDaysFromNow && date >= today;
+
+                // We need to create a UTC date from the input to compare it correctly
+                const inputDateUTC = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+                
+                return inputDateUTC <= thirtyDaysFromNow && inputDateUTC >= today;
             }
 
             function calculateNextBillingDate(isoDateString) {
                 if (!isoDateString) return "";
-                const date = new Date(isoDateString + 'T00:00:00Z');
+                const date = new Date(isoDateString);
+                if (isNaN(date.getTime())) return "";
                 date.setUTCMonth(date.getUTCMonth() + 1);
                 return date.toISOString().split('T')[0];
             }
 
             function calculateFirstBillingDate(leaseStart) {
                 if (!leaseStart) return "";
-                const startDate = new Date(leaseStart + 'T00:00:00Z');
+                const startDate = new Date(leaseStart);
+                if (isNaN(startDate.getTime())) return "";
                 startDate.setUTCMonth(startDate.getUTCMonth() + 1);
                 return startDate.toISOString().split('T')[0];
             }
@@ -635,19 +653,19 @@
             }
 
             function createTenantListItem(tenant) {
-                 const elecUsage = (tenant.elecCurrent !== "") ? tenant.elecCurrent - tenant.elecPrev : 0;
-                const waterUsage = (tenant.waterCurrent !== "") ? tenant.waterCurrent - tenant.waterPrev : 0;
+                 const elecUsage = (tenant.elecCurrent !== "" && tenant.elecCurrent != null) ? Number(tenant.elecCurrent) - Number(tenant.elecPrev) : 0;
+                const waterUsage = (tenant.waterCurrent !== "" && tenant.waterCurrent != null) ? Number(tenant.waterCurrent) - Number(tenant.waterPrev) : 0;
                 const elecBilling = elecUsage * state.rates.electricity;
                 const waterBilling = waterUsage * state.rates.water;
                 const parkingBilling = (tenant.vehicles?.length || 0) * state.rates.parking;
                 const totalBilling = elecBilling + waterBilling + parseFloat(tenant.rent || 0) + parseFloat(tenant.other || 0) + parkingBilling;
                 const now = new Date();
                 const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-                const currentBillingDateObj = tenant.currentBillingDate ? new Date(tenant.currentBillingDate + 'T00:00:00Z') : null;
+                const currentBillingDateObj = tenant.currentBillingDate ? new Date(tenant.currentBillingDate) : null;
                 let badgeText = 'Paid';
                 let badgeClass = 'status-paid';
                 let showActionButtons = false;
-                if (currentBillingDateObj) {
+                if (currentBillingDateObj && !isNaN(currentBillingDateObj.getTime())) {
                     const threeDaysBeforeBilling = new Date(currentBillingDateObj);
                     threeDaysBeforeBilling.setUTCDate(threeDaysBeforeBilling.getUTCDate() - 3);
                     if (today > currentBillingDateObj) {
@@ -685,8 +703,8 @@
                             <div class="details-section"><strong>Documents</strong>${documentDetails}</div>
                             <div class="details-section"><strong>Contact</strong>${contactDetails}</div>
                             <div class="details-section"><strong>Vehicles</strong>${vehicleListHTML}<span>Billing: ${(tenant.vehicles && tenant.vehicles.length > 0) ? parkingBilling.toFixed(2) + ' USD' : ''}</span></div>
-                            <div class="details-section"><strong>Electricity Usage</strong><span>Previous: ${tenant.elecPrev ? tenant.elecPrev + ' Kwh' : ''}</span><span>New: ${tenant.elecCurrent !== "" ? tenant.elecCurrent + ' Kwh' : ''}</span><span>Billing: ${tenant.elecCurrent !== "" ? elecBilling.toFixed(2) + ' USD' : ''}</span></div>
-                            <div class="details-section"><strong>Water Usage</strong><span>Previous: ${tenant.waterPrev ? tenant.waterPrev + ' m³' : ''}</span><span>New: ${tenant.waterCurrent !== "" ? tenant.waterCurrent + ' m³' : ''}</span><span>Billing: ${tenant.waterCurrent !== "" ? waterBilling.toFixed(2) + ' USD' : ''}</span></div>
+                            <div class="details-section"><strong>Electricity Usage</strong><span>Previous: ${tenant.elecPrev ? tenant.elecPrev + ' Kwh' : ''}</span><span>New: ${tenant.elecCurrent !== "" && tenant.elecCurrent != null ? tenant.elecCurrent + ' Kwh' : ''}</span><span>Billing: ${tenant.elecCurrent !== "" && tenant.elecCurrent != null ? elecBilling.toFixed(2) + ' USD' : ''}</span></div>
+                            <div class="details-section"><strong>Water Usage</strong><span>Previous: ${tenant.waterPrev ? tenant.waterPrev + ' m³' : ''}</span><span>New: ${tenant.waterCurrent !== "" && tenant.waterCurrent != null ? tenant.waterCurrent + ' m³' : ''}</span><span>Billing: ${tenant.waterCurrent !== "" && tenant.waterCurrent != null ? waterBilling.toFixed(2) + ' USD' : ''}</span></div>
                             <div class="details-section"><strong>Payment</strong><span>Billing Date: ${formatDate(tenant.currentBillingDate)}</span><span>Rent: ${tenant.rent ? tenant.rent + ' USD' : ''}</span><span>Other: ${tenant.other ? tenant.other + ' USD' : ''}</span><strong>Total billing: ${totalBilling > 0 ? totalBilling.toFixed(2) + ' USD' : ''}</strong></div>
                         </div>
                         <div class="details-actions">
@@ -1071,21 +1089,23 @@
                         if (leaseStart && tenure) {
                             const tenureMonths = parseInt(tenure, 10);
                             if (!isNaN(tenureMonths)) {
-                                const startDate = new Date(leaseStart + 'T00:00:00Z');
-                                let targetMonth = startDate.getUTCMonth() + tenureMonths;
-                                let targetYear = startDate.getUTCFullYear();
-                                targetYear += Math.floor(targetMonth / 12);
-                                targetMonth %= 12;
-                                const nextDay = new Date(startDate);
-                                nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-                                const isLastDayOfMonth = nextDay.getUTCMonth() !== startDate.getUTCMonth();
-                                const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-                                let endDay = startDate.getUTCDate();
-                                if (isLastDayOfMonth || endDay > daysInTargetMonth) {
-                                    endDay = daysInTargetMonth;
+                                const startDate = new Date(leaseStart);
+                                if (!isNaN(startDate.getTime())) {
+                                    let targetMonth = startDate.getUTCMonth() + tenureMonths;
+                                    let targetYear = startDate.getUTCFullYear();
+                                    targetYear += Math.floor(targetMonth / 12);
+                                    targetMonth %= 12;
+                                    const nextDay = new Date(startDate);
+                                    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+                                    const isLastDayOfMonth = nextDay.getUTCMonth() !== startDate.getUTCMonth();
+                                    const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+                                    let endDay = startDate.getUTCDate();
+                                    if (isLastDayOfMonth || endDay > daysInTargetMonth) {
+                                        endDay = daysInTargetMonth;
+                                    }
+                                    const endDate = new Date(Date.UTC(targetYear, targetMonth, endDay));
+                                    newValues.leaseEnd = endDate.toISOString().split('T')[0];
                                 }
-                                const endDate = new Date(Date.UTC(targetYear, targetMonth, endDay));
-                                newValues.leaseEnd = endDate.toISOString().split('T')[0];
                             }
                         }
                         if (leaseStart !== tenant.leaseStart) {
@@ -1106,8 +1126,8 @@
             function handlePaidClick(tenantId) {
                 const { tenant } = findTenant(tenantId);
                 if (!tenant) return;
-                const elecUsage = (tenant.elecCurrent !== "") ? tenant.elecCurrent - tenant.elecPrev : 0;
-                const waterUsage = (tenant.waterCurrent !== "") ? tenant.waterCurrent - tenant.waterPrev : 0;
+                const elecUsage = (tenant.elecCurrent !== "" && tenant.elecCurrent != null) ? Number(tenant.elecCurrent) - Number(tenant.elecPrev) : 0;
+                const waterUsage = (tenant.waterCurrent !== "" && tenant.waterCurrent != null) ? Number(tenant.waterCurrent) - Number(tenant.waterPrev) : 0;
                 const elecBilling = elecUsage * state.rates.electricity;
                 const waterBilling = waterUsage * state.rates.water;
                 const parkingBilling = (tenant.vehicles?.length || 0) * state.rates.parking;
@@ -1369,3 +1389,4 @@
     </script>
 </body>
 </html>
+
