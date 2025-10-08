@@ -60,8 +60,7 @@
             gap: 0.5rem;
         }
         #set-rate-btn,
-        #modal-renew-btn,
-        .header-actions button {
+        #modal-renew-btn {
             background-color: transparent;
             border: 1px solid var(--border-color);
             color: var(--secondary-text-color);
@@ -74,8 +73,7 @@
             transition: all 0.2s ease-in-out;
         }
         #set-rate-btn:hover,
-        #modal-renew-btn:hover,
-        .header-actions button:hover {
+        #modal-renew-btn:hover {
             background-color: #f8f9fa;
             color: var(--primary-text-color);
             border-color: #adb5bd;
@@ -522,8 +520,6 @@
         <div class="main-header">
             <h1>Tenant Information</h1>
             <div class="header-actions">
-                <button id="backup-btn">Backup</button>
-                <button id="restore-btn">Restore</button>
                 <button id="set-rate-btn">Set rate</button>
             </div>
         </div>
@@ -545,7 +541,6 @@
         </div>
     </div>
     <div id="context-menu" class="context-menu" style="display: none;"></div>
-    <input type="file" id="restore-input" accept=".json" style="display: none;">
 
     <script>
         (function() {
@@ -559,99 +554,28 @@
                     water: 1.0,
                     parking: 50.0
                 },
-                sections: [{
-                    id: 1,
-                    name: "Floor 1",
-                    tenants: [{
-                        id: 101,
-                        name: "Alice Johnson",
-                        unit: "101",
-                        phone: "555-0101",
-                        leaseStart: "2025-09-15",
-                        leaseEnd: "2026-09-15",
-                        tenure: 12,
-                        currentBillingDate: "2025-10-15",
-                        nationality: 'Foreigner',
-                        idExpiry: '',
-                        passportExpiry: "2028-05-20",
-                        visaExpiry: "2025-10-04",
-                        fpcs: "Yes",
-                        pax: 5,
-                        vehicles: ["Car [1BC - 3456]"],
-                        elecPrev: 9876,
-                        elecCurrent: "",
-                        waterPrev: 150,
-                        waterCurrent: "",
-                        rent: 500,
-                        other: 0,
-                        paymentHistory: [],
-                    }, {
-                        id: 102,
-                        name: "Bob Williams",
-                        unit: "102",
-                        phone: "555-0102",
-                        leaseStart: "2025-08-28",
-                        leaseEnd: "2026-02-28",
-                        tenure: "6",
-                        currentBillingDate: "2025-10-02",
-                        passportExpiry: "",
-                        visaExpiry: "",
-                        nationality: 'Local',
-                        idExpiry: '2030-01-01',
-                        fpcs: "No",
-                        pax: 1,
-                        vehicles: [],
-                        elecPrev: 1000,
-                        elecCurrent: "",
-                        waterPrev: 20,
-                        waterCurrent: "",
-                        rent: 450,
-                        other: 0,
-                        paymentHistory: [],
-                    }]
-                }, ],
+                sections: [],
                 defaultTenantState: {
                     name: '', phone: '', leaseStart: "", leaseEnd: "", tenure: "", currentBillingDate: "",
                     nationality: 'Local', idExpiry: '', passportExpiry: "", visaExpiry: "", fpcs: "No", pax: "",
                     vehicles: [], elecPrev: "", elecCurrent: "", waterPrev: "", waterCurrent: "", rent: "",
                     other: "", paymentHistory: [],
                 },
-                nextSectionId: 2,
-                nextTenantId: 103,
+                nextSectionId: 1,
+                nextTenantId: 1,
                 currentModalCallback: null,
                 currentModalCancelCallback: null,
                 currentlyExpandedTenantId: null,
                 currentlyEditingTenantId: null,
             };
-            function saveStateToLocalStorage() {
-                try {
-                    localStorage.setItem('tenantAppData', JSON.stringify(state));
-                } catch (e) {
-                    console.error("Error saving state to localStorage", e);
-                }
-            }
-            function loadStateFromLocalStorage() {
-                try {
-                    const savedState = localStorage.getItem('tenantAppData');
-                    if (savedState) {
-                        const parsedState = JSON.parse(savedState);
-                        Object.assign(state, parsedState);
-                    }
-                } catch (e) {
-                    console.error("Error loading state from localStorage", e);
-                }
-            }
 
             // #################################################################
-            // ## CONCEPTUAL MODULE: ui.js
+            // ## CONCEPTUAL MODULE: ui.js & API
             // #################################################################
             const DOM = {
                 sectionsContainer: document.getElementById('sections-container'),
                 addSectionBtn: document.getElementById('add-section-btn'),
                 setRateBtn: document.getElementById('set-rate-btn'),
-                backupBtn: document.getElementById('backup-btn'),
-                restoreBtn: document.getElementById('restore-btn'),
-                restoreInput: document.getElementById('restore-input'),
                 modalOverlay: document.getElementById('modal-overlay'),
                 modalTitle: document.getElementById('modal-title'),
                 modalRenewBtn: document.getElementById('modal-renew-btn'),
@@ -660,6 +584,15 @@
                 modalCancelBtn: document.getElementById('modal-cancel-btn'),
                 contextMenu: document.getElementById('context-menu'),
             };
+
+            const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxoNBzSqC6pR4QuRTDlxsBOYUj5180vCz1KbeRbWb3P21OLW4ne28XV7HZvhfCbeqpf/exec";
+
+            function showLoading(isLoading) {
+                DOM.addSectionBtn.disabled = isLoading;
+                DOM.setRateBtn.disabled = isLoading;
+                DOM.addSectionBtn.textContent = isLoading ? "Loading..." : "+ add section";
+            }
+
             function formatDate(isoString) {
                 if (!isoString) return "";
                 const date = new Date(isoString + 'T00:00:00Z');
@@ -668,6 +601,7 @@
                 const year = date.getUTCFullYear();
                 return `${day}-${month}-${year}`;
             }
+
             function isDateExpiring(isoDateString) {
                 if (!isoDateString) return false;
                 const date = new Date(isoDateString + 'T00:00:00Z');
@@ -677,18 +611,21 @@
                 thirtyDaysFromNow.setUTCDate(today.getUTCDate() + 30);
                 return date <= thirtyDaysFromNow && date >= today;
             }
+
             function calculateNextBillingDate(isoDateString) {
                 if (!isoDateString) return "";
                 const date = new Date(isoDateString + 'T00:00:00Z');
                 date.setUTCMonth(date.getUTCMonth() + 1);
                 return date.toISOString().split('T')[0];
             }
+
             function calculateFirstBillingDate(leaseStart) {
                 if (!leaseStart) return "";
                 const startDate = new Date(leaseStart + 'T00:00:00Z');
                 startDate.setUTCMonth(startDate.getUTCMonth() + 1);
                 return startDate.toISOString().split('T')[0];
             }
+
             function findTenant(tenantId) {
                 for (const section of state.sections) {
                     const tenant = section.tenants.find(t => t.id === tenantId);
@@ -696,8 +633,9 @@
                 }
                 return { tenant: null, section: null };
             }
+
             function createTenantListItem(tenant) {
-                const elecUsage = (tenant.elecCurrent !== "") ? tenant.elecCurrent - tenant.elecPrev : 0;
+                 const elecUsage = (tenant.elecCurrent !== "") ? tenant.elecCurrent - tenant.elecPrev : 0;
                 const waterUsage = (tenant.waterCurrent !== "") ? tenant.waterCurrent - tenant.waterPrev : 0;
                 const elecBilling = elecUsage * state.rates.electricity;
                 const waterBilling = waterUsage * state.rates.water;
@@ -758,6 +696,7 @@
                     </div>`;
                 return listItem;
             }
+
             function createSectionElement(section) {
                 const sectionDiv = document.createElement('div');
                 sectionDiv.className = 'floor-container';
@@ -772,6 +711,7 @@
                 sectionDiv.appendChild(tenantList);
                 return sectionDiv;
             }
+
             function render() {
                 DOM.sectionsContainer.innerHTML = '';
                 state.sections.forEach(section => {
@@ -999,6 +939,49 @@
             // #################################################################
             // ## CONCEPTUAL MODULE: events.js
             // #################################################################
+            
+            async function loadDataFromSheet() {
+                showLoading(true);
+                try {
+                    const response = await fetch(SCRIPT_URL);
+                    if (!response.ok) throw new Error("Failed to load data from sheet.");
+                    const data = await response.json();
+                    
+                    state.rates = data.rates && Object.keys(data.rates).length > 0 ? data.rates : state.rates;
+                    state.sections = data.sections && data.sections.length > 0 ? data.sections : state.sections;
+
+                    if (state.sections.length > 0) {
+                        const allTenantIds = state.sections.flatMap(s => s.tenants.map(t => t.id));
+                        state.nextTenantId = Math.max(0, ...allTenantIds) + 1;
+                        const allSectionIds = state.sections.map(s => s.id);
+                        state.nextSectionId = Math.max(0, ...allSectionIds) + 1;
+                    }
+
+                    render();
+                } catch (error) {
+                    console.error("Error loading data:", error);
+                    alert("Could not load data from Google Sheet. Please check the URL, script permissions, and your internet connection.");
+                } finally {
+                    showLoading(false);
+                }
+            }
+
+            async function saveDataToSheet() {
+                // You could add a "Saving..." indicator here for better UX
+                try {
+                    await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(state)
+                    });
+                    console.log("Save successful");
+                } catch (error) {
+                    console.error("Error saving data:", error);
+                    alert("Could not save data to Google Sheet.");
+                }
+            }
+
             function handleAddSectionClick() {
                 showModal({
                     title: 'Add New Section',
@@ -1007,7 +990,7 @@
                     onSave: (values) => {
                         state.sections.push({ id: state.nextSectionId++, name: values.sectionName, tenants: [] });
                         render();
-                        saveStateToLocalStorage();
+                        saveDataToSheet();
                     }
                 });
             }
@@ -1026,7 +1009,7 @@
                         state.rates.water = Math.max(0, parseFloat(newRates.water)) || 0;
                         state.rates.parking = Math.max(0, parseFloat(newRates.parking)) || 0;
                         render();
-                        saveStateToLocalStorage();
+                        saveDataToSheet();
                     }
                 });
             }
@@ -1038,10 +1021,10 @@
                         fields: [{ id: 'unitNumber', label: 'Unit Number' }],
                         requiredFields: ['unitNumber'],
                         onSave: (values) => {
-                            const newTenant = { ...state.defaultTenantState, id: state.nextTenantId++, unit: values.unitNumber, paymentHistory: [] };
+                            const newTenant = { ...state.defaultTenantState, id: state.nextTenantId++, unit: values.unitNumber, paymentHistory: [], sectionId: section.id };
                             section.tenants.push(newTenant);
                             render();
-                            saveStateToLocalStorage();
+                            saveDataToSheet();
                         }
                     });
                 }
@@ -1115,7 +1098,7 @@
                         }
                         Object.assign(tenant, newValues);
                         render();
-                        saveStateToLocalStorage();
+                        saveDataToSheet();
                     },
                     onCancel: onCancelOverride
                 });
@@ -1149,7 +1132,7 @@
                         tenant.waterCurrent = "";
                         tenant.other = 0;
                         render();
-                        saveStateToLocalStorage();
+                        saveDataToSheet();
                     }
                 });
             }
@@ -1183,7 +1166,7 @@
                         tenant.waterCurrent = parseFloat(newReadings.waterCurrent) || tenant.waterPrev;
                         tenant.other = Math.max(0, parseFloat(newReadings.other)) || 0;
                         render();
-                        saveStateToLocalStorage();
+                        saveDataToSheet();
                     }
                 });
             }
@@ -1205,8 +1188,8 @@
                     historyHtml += `
                         <tr>
                             <td>${formatDate(entry.billingDate)}</td><td>${entry.elecUsage}</td><td>${entry.waterUsage}</td>
-                            <td>${entry.rent.toFixed(2)}</td><td>${entry.other.toFixed(2)}</td><td>${entry.parking.toFixed(2)}</td>
-                            <td><strong>${entry.totalPaid.toFixed(2)}</strong></td>
+                            <td>${(entry.rent || 0).toFixed(2)}</td><td>${(entry.other || 0).toFixed(2)}</td><td>${(entry.parking || 0).toFixed(2)}</td>
+                            <td><strong>${(entry.totalPaid || 0).toFixed(2)}</strong></td>
                         </tr>`;
                 });
                 historyHtml += `</tbody></table>`;
@@ -1227,13 +1210,13 @@
                     confirmationText: "This will clear all tenant data from the unit but keep the unit itself. This action cannot be undone. To proceed, type 'confirm' below.",
                     onSave: () => {
                         Object.keys(tenant).forEach(key => {
-                            if (key !== 'id' && key !== 'unit') {
+                            if (key !== 'id' && key !== 'unit' && key !== 'sectionId') {
                                 tenant[key] = state.defaultTenantState[key];
                             }
                         });
                         tenant.paymentHistory = [];
                         render();
-                        saveStateToLocalStorage();
+                        saveDataToSheet();
                     }
                 });
             }
@@ -1246,7 +1229,7 @@
                     onSave: () => {
                         section.tenants = section.tenants.filter(t => t.id !== tenantId);
                         render();
-                        saveStateToLocalStorage();
+                        saveDataToSheet();
                     }
                 });
             }
@@ -1259,7 +1242,7 @@
                     onSave: () => {
                         state.sections = state.sections.filter(s => s.id !== sectionId);
                         render();
-                        saveStateToLocalStorage();
+                        saveDataToSheet();
                     }
                 });
             }
@@ -1314,43 +1297,8 @@
                     onCancel: () => { handleEditClick(tenantId); return false; },
                 });
             }
-            function handleBackupClick() {
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
-                const downloadAnchorNode = document.createElement('a');
-                downloadAnchorNode.setAttribute("href", dataStr);
-                downloadAnchorNode.setAttribute("download", `tenants-backup-${new Date().toISOString().split('T')[0]}.json`);
-                document.body.appendChild(downloadAnchorNode);
-                downloadAnchorNode.click();
-                downloadAnchorNode.remove();
-            }
-            function handleRestoreClick() {
-                DOM.restoreInput.click();
-            }
-            function handleRestoreFile(event) {
-                const file = event.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    try {
-                        const restoredState = JSON.parse(e.target.result);
-                        if (restoredState && restoredState.sections && restoredState.rates) {
-                            Object.assign(state, restoredState);
-                            saveStateToLocalStorage();
-                            render();
-                        } else {
-                            alert("Invalid backup file format.");
-                        }
-                    } catch (err) {
-                        alert("Error reading or parsing the backup file.");
-                        console.error(err);
-                    }
-                };
-                reader.readAsText(file);
-                DOM.restoreInput.value = '';
-            }
+            
             function init() {
-                loadStateFromLocalStorage();
-                
                 DOM.sectionsContainer.addEventListener('click', (event) => {
                     const target = event.target;
                     const tenantItem = target.closest('.tenant-item');
@@ -1401,9 +1349,6 @@
                 window.addEventListener('click', hideContextMenu);
                 DOM.addSectionBtn.addEventListener('click', handleAddSectionClick);
                 DOM.setRateBtn.addEventListener('click', handleSetRateClick);
-                DOM.backupBtn.addEventListener('click', handleBackupClick);
-                DOM.restoreBtn.addEventListener('click', handleRestoreClick);
-                DOM.restoreInput.addEventListener('change', handleRestoreFile);
                 DOM.modalSaveBtn.addEventListener('click', handleModalSave);
                 DOM.modalCancelBtn.addEventListener('click', handleModalCancel);
                 DOM.modalRenewBtn.addEventListener('click', handleModalRenew);
@@ -1417,11 +1362,10 @@
                     }
                 });
                 
-                render();
+                loadDataFromSheet();
             }
             document.addEventListener('DOMContentLoaded', init);
         })();
     </script>
 </body>
 </html>
-
