@@ -547,14 +547,10 @@
         (function() {
             'use strict';
             // #################################################################
-            // ## CONCEPTUAL MODULE: state.js
+            // ##                      APPLICATION STATE                      ##
             // #################################################################
             const state = {
-                rates: {
-                    electricity: 0.25,
-                    water: 1.0,
-                    parking: 50.0
-                },
+                rates: { electricity: 0.25, water: 1.0, parking: 50.0 },
                 sections: [],
                 defaultTenantState: {
                     name: '', phone: '', leaseStart: "", leaseEnd: "", tenure: "", currentBillingDate: "",
@@ -568,12 +564,66 @@
                 currentModalCancelCallback: null,
                 currentlyExpandedTenantId: null,
                 currentlyEditingTenantId: null,
-                isModalOpen: false, 
+                isModalOpen: false,
             };
 
+            // #################################################################
+            // ##                      API & DATA SYNC                      ##
+            // #################################################################
+            const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxoNBzSqC6pR4QuRTDlxsBOYUj5180vCz1KbeRbWb3P21OLW4ne28XV7HZvhfCbeqpf/exec";
+
+            async function loadDataFromSheet() {
+                if (state.isModalOpen) {
+                    console.log("Modal is open, skipping background sync.");
+                    return;
+                }
+                console.log("Fetching data from Google Sheet...");
+                try {
+                    const response = await fetch(SCRIPT_URL);
+                    if (!response.ok) throw new Error("Failed to load data from sheet.");
+                    const freshData = await response.json();
+                    
+                    const currentDataSignature = JSON.stringify({ rates: state.rates, sections: state.sections });
+                    const freshDataSignature = JSON.stringify(freshData);
+
+                    if (currentDataSignature !== freshDataSignature) {
+                        console.log("New data found from Google Sheet. Refreshing UI.");
+                        state.rates = freshData.rates && Object.keys(freshData.rates).length > 0 ? freshData.rates : state.rates;
+                        state.sections = freshData.sections && freshData.sections.length > 0 ? freshData.sections : state.sections;
+
+                        if (state.sections.length > 0) {
+                            const allTenantIds = state.sections.flatMap(s => s.tenants.map(t => t.id));
+                            state.nextTenantId = Math.max(0, ...allTenantIds) + 1;
+                            const allSectionIds = state.sections.map(s => s.id);
+                            state.nextSectionId = Math.max(0, ...allSectionIds) + 1;
+                        }
+                        
+                        render();
+                    } else {
+                        console.log("Local cache is up-to-date.");
+                    }
+                } catch (error) {
+                    console.error("Could not sync with Google Sheet, running from local cache:", error);
+                }
+            }
+
+            async function saveDataToSheet() {
+                console.log("Syncing data to Google Sheet in the background...");
+                try {
+                    await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(state)
+                    });
+                    console.log("Sync successful.");
+                } catch (error) {
+                    console.error("Error syncing data to Google Sheet:", error);
+                }
+            }
 
             // #################################################################
-            // ## CONCEPTUAL MODULE: ui.js & API
+            // ##                       DOM SELECTORS                         ##
             // #################################################################
             const DOM = {
                 sectionsContainer: document.getElementById('sections-container'),
@@ -588,24 +638,22 @@
                 contextMenu: document.getElementById('context-menu'),
             };
 
-            const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxoNBzSqC6pR4QuRTDlxsBOYUj5180vCz1KbeRbWb3P21OLW4ne28XV7HZvhfCbeqpf/exec";
+            // #################################################################
+            // ##                         UTILITIES                           ##
+            // #################################################################
 
-            function showLoading(isLoading) {
-                DOM.addSectionBtn.disabled = isLoading;
-                DOM.setRateBtn.disabled = isLoading;
-                DOM.addSectionBtn.textContent = isLoading ? "Loading..." : "+ add section";
-            }
-
+            /** Formats an ISO date string to DD-MM-YYYY format. */
             function formatDate(isoString) {
-                if (!isoString) { return ""; }
+                if (!isoString) return "";
                 const date = new Date(isoString);
-                if (isNaN(date.getTime())) { return ""; }
+                if (isNaN(date.getTime())) return "";
                 const day = String(date.getUTCDate()).padStart(2, '0');
                 const month = String(date.getUTCMonth() + 1).padStart(2, '0');
                 const year = date.getUTCFullYear();
                 return `${day}-${month}-${year}`;
             }
 
+            /** Checks if a date is within the next 30 days. */
             function isDateExpiring(isoDateString) {
                 if (!isoDateString) return false;
                 const date = new Date(isoDateString);
@@ -615,12 +663,12 @@
                 const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
                 const thirtyDaysFromNow = new Date(today);
                 thirtyDaysFromNow.setUTCDate(today.getUTCDate() + 30);
-
                 const inputDateUTC = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
                 
                 return inputDateUTC <= thirtyDaysFromNow && inputDateUTC >= today;
             }
 
+            /** Calculates the next billing date by adding one month. */
             function calculateNextBillingDate(isoDateString) {
                 if (!isoDateString) return "";
                 const date = new Date(isoDateString);
@@ -628,15 +676,13 @@
                 date.setUTCMonth(date.getUTCMonth() + 1);
                 return date.toISOString().split('T')[0];
             }
-
+            
+            /** Calculates the first billing date from the lease start date. */
             function calculateFirstBillingDate(leaseStart) {
-                if (!leaseStart) return "";
-                const startDate = new Date(leaseStart);
-                if (isNaN(startDate.getTime())) return "";
-                startDate.setUTCMonth(startDate.getUTCMonth() + 1);
-                return startDate.toISOString().split('T')[0];
+                return calculateNextBillingDate(leaseStart);
             }
 
+            /** Finds a tenant and their section by tenant ID. */
             function findTenant(tenantId) {
                 for (const section of state.sections) {
                     const tenant = section.tenants.find(t => t.id === tenantId);
@@ -645,39 +691,86 @@
                 return { tenant: null, section: null };
             }
 
-            function createTenantListItem(tenant) {
-                 const elecUsage = (tenant.elecCurrent !== "" && tenant.elecCurrent != null) ? Number(tenant.elecCurrent) - Number(tenant.elecPrev) : 0;
-                const waterUsage = (tenant.waterCurrent !== "" && tenant.waterCurrent != null) ? Number(tenant.waterCurrent) - Number(tenant.waterPrev) : 0;
+            /** Calculates the lease end date based on start and tenure. */
+            function calculateLeaseEndDate(leaseStart, tenure) {
+                const tenureMonths = parseInt(tenure, 10);
+                const startDate = new Date(leaseStart);
+                if (isNaN(tenureMonths) || isNaN(startDate.getTime())) return null;
+
+                let targetMonth = startDate.getUTCMonth() + tenureMonths;
+                let targetYear = startDate.getUTCFullYear();
+                targetYear += Math.floor(targetMonth / 12);
+                targetMonth %= 12;
+
+                const nextDay = new Date(startDate);
+                nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+                const isLastDayOfMonth = nextDay.getUTCMonth() !== startDate.getUTCMonth();
+                
+                const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+                let endDay = startDate.getUTCDate();
+                if (isLastDayOfMonth || endDay > daysInTargetMonth) {
+                    endDay = daysInTargetMonth;
+                }
+                
+                const endDate = new Date(Date.UTC(targetYear, targetMonth, endDay));
+                return endDate.toISOString().split('T')[0];
+            }
+
+
+            // #################################################################
+            // ##                       UI RENDERING                          ##
+            // #################################################################
+
+            /** Gets tenant billing calculations. */
+            function getBillingInfo(tenant) {
+                const elecUsage = (tenant.elecCurrent || 0) - (tenant.elecPrev || 0);
+                const waterUsage = (tenant.waterCurrent || 0) - (tenant.waterPrev || 0);
                 const elecBilling = elecUsage * state.rates.electricity;
                 const waterBilling = waterUsage * state.rates.water;
                 const parkingBilling = (tenant.vehicles?.length || 0) * state.rates.parking;
                 const totalBilling = elecBilling + waterBilling + parseFloat(tenant.rent || 0) + parseFloat(tenant.other || 0) + parkingBilling;
-                
-                let badgeHTML = '';
-                let showActionButtons = false;
-                let showPaidButton = false;
+                return { elecBilling, waterBilling, parkingBilling, totalBilling };
+            }
+            
+            /** Determines the status badge for a tenant. */
+            function getStatusInfo(tenant) {
+                if (!tenant.name) return { badgeHTML: '', showActionButtons: false, showPaidButton: false };
 
-                if (tenant.name) {
-                    const now = new Date();
-                    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-                    const currentBillingDateObj = tenant.currentBillingDate ? new Date(tenant.currentBillingDate) : null;
-                    let badgeText = 'Paid';
-                    let badgeClass = 'status-paid';
-                    
-                    if (currentBillingDateObj && !isNaN(currentBillingDateObj.getTime())) {
-                        const threeDaysBeforeBilling = new Date(currentBillingDateObj);
-                        threeDaysBeforeBilling.setUTCDate(threeDaysBeforeBilling.getUTCDate() - 3);
-                        if (today > currentBillingDateObj) {
-                            badgeText = 'Overdue'; badgeClass = 'status-overdue'; showActionButtons = true;
-                        } else if (today >= threeDaysBeforeBilling) {
-                            badgeText = 'Billing'; badgeClass = 'status-billing'; showActionButtons = true;
-                        }
+                const now = new Date();
+                const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+                const currentBillingDateObj = tenant.currentBillingDate ? new Date(tenant.currentBillingDate) : null;
+                
+                let badgeText = 'Paid';
+                let badgeClass = 'status-paid';
+                let showActionButtons = false;
+
+                if (currentBillingDateObj && !isNaN(currentBillingDateObj.getTime())) {
+                    const threeDaysBeforeBilling = new Date(currentBillingDateObj);
+                    threeDaysBeforeBilling.setUTCDate(threeDaysBeforeBilling.getUTCDate() - 3);
+
+                    if (today > currentBillingDateObj) {
+                        badgeText = 'Overdue';
+                        badgeClass = 'status-overdue';
+                        showActionButtons = true;
+                    } else if (today >= threeDaysBeforeBilling) {
+                        badgeText = 'Billing';
+                        badgeClass = 'status-billing';
+                        showActionButtons = true;
                     }
-                    badgeHTML = `<span class="tenant-status-badge ${badgeClass}">${badgeText}</span>`;
-                    showPaidButton = showActionButtons && tenant.elecCurrent !== "" && tenant.elecCurrent != null && tenant.waterCurrent !== "" && tenant.waterCurrent != null;
                 }
                 
-                const leaseEndClass = isDateExpiring(tenant.leaseEnd) ? 'class="expiring-date"' : '';
+                const badgeHTML = `<span class="tenant-status-badge ${badgeClass}">${badgeText}</span>`;
+                const showPaidButton = showActionButtons && tenant.elecCurrent && tenant.waterCurrent;
+
+                return { badgeHTML, showActionButtons, showPaidButton };
+            }
+
+            /** Creates the HTML for the expanded details of a tenant. */
+            function createTenantExpandedDetailsHTML(tenant, billingInfo, statusInfo) {
+                const { elecBilling, waterBilling, parkingBilling, totalBilling } = billingInfo;
+                const { showActionButtons, showPaidButton } = statusInfo;
+                
+                // Document Details
                 let documentDetails = '';
                 if (tenant.nationality === 'Local') {
                     const idExpiryClass = isDateExpiring(tenant.idExpiry) ? 'class="expiring-date"' : '';
@@ -685,57 +778,83 @@
                 } else {
                     const passportExpiryClass = isDateExpiring(tenant.passportExpiry) ? 'class="expiring-date"' : '';
                     const visaExpiryClass = isDateExpiring(tenant.visaExpiry) ? 'class="expiring-date"' : '';
-                    documentDetails = `<span ${passportExpiryClass}>Passport Expiry: ${formatDate(tenant.passportExpiry)}</span><span ${visaExpiryClass}>Visa Expiry: ${formatDate(tenant.visaExpiry)}</span>`;
+                    documentDetails = `
+                        <span ${passportExpiryClass}>Passport Expiry: ${formatDate(tenant.passportExpiry)}</span>
+                        <span ${visaExpiryClass}>Visa Expiry: ${formatDate(tenant.visaExpiry)}</span>`;
                 }
-                const contactDetails = tenant.nationality === 'Local' ? `<span>Phone: ${tenant.phone}</span><span>Pax: ${tenant.pax || ''}</span>` : `<span>Phone: ${tenant.phone}</span><span>FPCS Registry: ${tenant.fpcs}</span><span>Pax: ${tenant.pax || ''}</span>`;
-                const vehicleListHTML = (tenant.vehicles && tenant.vehicles.length > 0) ? `<span>${tenant.vehicles.join('<br>')}</span>` : '';
-                const historyButtonHTML = (tenant.paymentHistory && tenant.paymentHistory.length > 0) ? '<button class="history-btn">History</button>' : '';
                 
+                // Other Details
+                const leaseEndClass = isDateExpiring(tenant.leaseEnd) ? 'class="expiring-date"' : '';
+                const contactDetails = tenant.nationality === 'Local' 
+                    ? `<span>Phone: ${tenant.phone}</span><span>Pax: ${tenant.pax || ''}</span>` 
+                    : `<span>Phone: ${tenant.phone}</span><span>FPCS Registry: ${tenant.fpcs}</span><span>Pax: ${tenant.pax || ''}</span>`;
+                const vehicleListHTML = tenant.vehicles?.length > 0 ? `<span>${tenant.vehicles.join('<br>')}</span>` : '';
+                
+                // Action Buttons
+                const historyButtonHTML = tenant.paymentHistory?.length > 0 ? '<button class="history-btn">History</button>' : '';
                 const billButtonHTML = showActionButtons ? '<button class="bill-btn">Bill</button>' : '';
                 const paidButtonHTML = showPaidButton ? '<button class="paid-btn">Paid</button>' : '';
+
+                return `
+                    <div class="details-grid">
+                        <div class="details-section"><strong>Lease</strong><span>Start: ${formatDate(tenant.leaseStart)}</span><span ${leaseEndClass}>End: ${formatDate(tenant.leaseEnd)}</span><span>Tenure: ${tenant.tenure ? tenant.tenure + ' month' : ''}</span></div>
+                        <div class="details-section"><strong>Documents</strong>${documentDetails}</div>
+                        <div class="details-section"><strong>Contact</strong>${contactDetails}</div>
+                        <div class="details-section"><strong>Vehicles</strong>${vehicleListHTML}<span>Billing: ${vehicleListHTML ? parkingBilling.toFixed(2) + ' USD' : ''}</span></div>
+                        <div class="details-section"><strong>Electricity Usage</strong><span>Previous: ${tenant.elecPrev ? tenant.elecPrev + ' Kwh' : ''}</span><span>New: ${tenant.elecCurrent ? tenant.elecCurrent + ' Kwh' : ''}</span><span>Billing: ${tenant.elecCurrent ? elecBilling.toFixed(2) + ' USD' : ''}</span></div>
+                        <div class="details-section"><strong>Water Usage</strong><span>Previous: ${tenant.waterPrev ? tenant.waterPrev + ' m³' : ''}</span><span>New: ${tenant.waterCurrent ? tenant.waterCurrent + ' m³' : ''}</span><span>Billing: ${tenant.waterCurrent ? waterBilling.toFixed(2) + ' USD' : ''}</span></div>
+                        <div class="details-section"><strong>Payment</strong><span>Billing Date: ${formatDate(tenant.currentBillingDate)}</span><span>Rent: ${tenant.rent ? tenant.rent + ' USD' : ''}</span><span>Other: ${tenant.other ? tenant.other + ' USD' : ''}</span><strong>Total billing: ${totalBilling > 0 ? totalBilling.toFixed(2) + ' USD' : ''}</strong></div>
+                    </div>
+                    <div class="details-actions">
+                        <div class="action-buttons-left"><button class="dlt-btn">Delete</button><button class="edt-btn">Edit</button>${historyButtonHTML}${billButtonHTML}</div>
+                        <div class="action-buttons-right">${paidButtonHTML}</div>
+                    </div>`;
+            }
+
+            /** Creates a tenant list item element. */
+            function createTenantListItem(tenant) {
+                const billingInfo = getBillingInfo(tenant);
+                const statusInfo = getStatusInfo(tenant);
+                const expandedDetailsHTML = createTenantExpandedDetailsHTML(tenant, billingInfo, statusInfo);
                 
                 const listItem = document.createElement('li');
                 listItem.className = 'tenant-item';
                 listItem.dataset.tenantId = tenant.id;
-                if (tenant.id === state.currentlyExpandedTenantId) { listItem.classList.add('expanded'); }
+                if (tenant.id === state.currentlyExpandedTenantId) {
+                    listItem.classList.add('expanded');
+                }
+                
                 listItem.innerHTML = `
                     <div class="tenant-summary">
-                        <div class="tenant-details"><span class="tenant-name">${tenant.name || 'No Name Assigned'}</span><span class="tenant-unit">Unit: ${tenant.unit}</span></div>
-                        ${badgeHTML}
+                        <div class="tenant-details">
+                            <span class="tenant-name">${tenant.name || 'No Name Assigned'}</span>
+                            <span class="tenant-unit">Unit: ${tenant.unit}</span>
+                        </div>
+                        ${statusInfo.badgeHTML}
                     </div>
-                    <div class="tenant-expanded-details">
-                        <div class="details-grid">
-                            <div class="details-section"><strong>Lease</strong><span>Start: ${formatDate(tenant.leaseStart)}</span><span ${leaseEndClass}>End: ${formatDate(tenant.leaseEnd)}</span><span>Tenure: ${tenant.tenure ? tenant.tenure + ' month' : ''}</span></div>
-                            <div class="details-section"><strong>Documents</strong>${documentDetails}</div>
-                            <div class="details-section"><strong>Contact</strong>${contactDetails}</div>
-                            <div class="details-section"><strong>Vehicles</strong>${vehicleListHTML}<span>Billing: ${(tenant.vehicles && tenant.vehicles.length > 0) ? parkingBilling.toFixed(2) + ' USD' : ''}</span></div>
-                            <div class="details-section"><strong>Electricity Usage</strong><span>Previous: ${tenant.elecPrev ? tenant.elecPrev + ' Kwh' : ''}</span><span>New: ${tenant.elecCurrent !== "" && tenant.elecCurrent != null ? tenant.elecCurrent + ' Kwh' : ''}</span><span>Billing: ${tenant.elecCurrent !== "" && tenant.elecCurrent != null ? elecBilling.toFixed(2) + ' USD' : ''}</span></div>
-                            <div class="details-section"><strong>Water Usage</strong><span>Previous: ${tenant.waterPrev ? tenant.waterPrev + ' m³' : ''}</span><span>New: ${tenant.waterCurrent !== "" && tenant.waterCurrent != null ? tenant.waterCurrent + ' m³' : ''}</span><span>Billing: ${tenant.waterCurrent !== "" && tenant.waterCurrent != null ? waterBilling.toFixed(2) + ' USD' : ''}</span></div>
-                            <div class="details-section"><strong>Payment</strong><span>Billing Date: ${formatDate(tenant.currentBillingDate)}</span><span>Rent: ${tenant.rent ? tenant.rent + ' USD' : ''}</span><span>Other: ${tenant.other ? tenant.other + ' USD' : ''}</span><strong>Total billing: ${totalBilling > 0 ? totalBilling.toFixed(2) + ' USD' : ''}</strong></div>
-                        </div>
-                        <div class="details-actions">
-                           <div class="action-buttons-left"><button class="dlt-btn">Delete</button><button class="edt-btn">Edit</button>${historyButtonHTML}${billButtonHTML}</div>
-                           <div class="action-buttons-right">${paidButtonHTML}</div>
-                        </div>
-                    </div>`;
+                    <div class="tenant-expanded-details">${expandedDetailsHTML}</div>`;
                 return listItem;
             }
 
+            /** Creates a section element with its tenants. */
             function createSectionElement(section) {
                 const sectionDiv = document.createElement('div');
                 sectionDiv.className = 'floor-container';
                 sectionDiv.dataset.sectionId = section.id;
+
                 const header = document.createElement('div');
                 header.className = 'floor-header';
                 header.innerHTML = `<h2>${section.name}</h2><button class="add-tenant-btn" data-section-id="${section.id}">+ add unit</button>`;
+
                 const tenantList = document.createElement('ul');
                 tenantList.className = 'tenant-list';
                 section.tenants.forEach(tenant => tenantList.appendChild(createTenantListItem(tenant)));
-                sectionDiv.appendChild(header);
-                sectionDiv.appendChild(tenantList);
+
+                sectionDiv.append(header, tenantList);
                 return sectionDiv;
             }
 
+            /** Renders the entire application based on the current state. */
             function render() {
                 DOM.sectionsContainer.innerHTML = '';
                 state.sections.forEach(section => {
@@ -743,18 +862,15 @@
                 });
             }
 
+
             // #################################################################
-            // ## CONCEPTUAL MODULE: modal.js
+            // ##                      MODAL & CONTEXT MENU                   ##
             // #################################################################
             let currentValidationHandler = null;
             function createModalField(field, initialValue = '') {
                 const group = document.createElement('div');
                 group.className = 'input-group';
-                const label = document.createElement('label');
-                label.setAttribute('for', field.id);
-                label.textContent = field.label;
-                group.appendChild(label);
-
+                
                 if (field.type === 'vehicles') {
                     group.innerHTML = `<div class="input-group-header"><label for="${field.id}">${field.label}</label><button type="button" id="add-vehicle-btn">+ add vehicle</button></div>`;
                     const vehicleContainer = document.createElement('div');
@@ -767,6 +883,11 @@
                     }
                     group.appendChild(vehicleContainer);
                 } else {
+                    const label = document.createElement('label');
+                    label.setAttribute('for', field.id);
+                    label.textContent = field.label;
+                    group.appendChild(label);
+
                     const input = document.createElement('input');
                     input.type = field.type || 'text';
                     input.className = 'modal-input';
@@ -796,8 +917,7 @@
                     if (option === selectedValue) {
                         input.checked = true;
                     }
-                    label.appendChild(input);
-                    label.appendChild(document.createTextNode(` ${option}`));
+                    label.append(input, ` ${option}`);
                     group.appendChild(label);
                 });
                 return group;
@@ -815,16 +935,19 @@
             }
 
             function showModal(config) {
-                state.isModalOpen = true; 
+                state.isModalOpen = true;
                 if (currentValidationHandler) {
                     DOM.modalInputsContainer.removeEventListener('input', currentValidationHandler);
                     currentValidationHandler = null;
                 }
+
                 const { title, fields = [], initialValues = {}, onSave, onCancel, isConfirmation = false, confirmationText = "", isEdit = false, isDelete = false, saveButtonText = "Save", requiredFields = [], validationRules = [] } = config;
+
                 DOM.modalTitle.textContent = title;
                 DOM.modalInputsContainer.innerHTML = '';
                 DOM.modalRenewBtn.style.display = isEdit ? 'block' : 'none';
                 DOM.modalCancelBtn.style.display = 'inline-block';
+
                 if (isConfirmation) {
                     DOM.modalSaveBtn.disabled = false;
                     DOM.modalInputsContainer.innerHTML = `<div class="modal-confirmation-text">${confirmationText}</div>`;
@@ -843,70 +966,49 @@
                     }
                 } else {
                     fields.forEach(field => {
-                        if (field.type === 'spacer') {
-                            const spacer = document.createElement('div');
-                            spacer.className = 'modal-spacer';
-                            DOM.modalInputsContainer.appendChild(spacer);
-                        } else if (field.type === 'nationality') {
-                            const g = document.createElement('div');
-                            g.className = 'input-group';
-                            g.innerHTML = `<label>Nationality</label>`;
-                            g.appendChild(createRadioGroup('nationality', ['Local', 'Foreigner'], initialValues.nationality));
-                            DOM.modalInputsContainer.appendChild(g);
-                        } else if (field.type === 'documentFields') {
-                            const docContainer = document.createElement('div');
-                            docContainer.id = 'document-fields-container';
-                            DOM.modalInputsContainer.appendChild(docContainer);
-                        } else if (field.type === 'fpcsFields') {
-                            const fpcsContainer = document.createElement('div');
-                            fpcsContainer.id = 'fpcs-fields-container';
-                            DOM.modalInputsContainer.appendChild(fpcsContainer);
-                        } else {
-                            DOM.modalInputsContainer.appendChild(createModalField(field, initialValues[field.id]));
+                        let element;
+                        switch (field.type) {
+                            case 'spacer':
+                                element = document.createElement('div');
+                                element.className = 'modal-spacer';
+                                break;
+                            case 'nationality':
+                                element = document.createElement('div');
+                                element.className = 'input-group';
+                                element.innerHTML = `<label>Nationality</label>`;
+                                element.appendChild(createRadioGroup('nationality', ['Local', 'Foreigner'], initialValues.nationality));
+                                break;
+                            case 'documentFields':
+                            case 'fpcsFields':
+                                element = document.createElement('div');
+                                element.id = field.type === 'documentFields' ? 'document-fields-container' : 'fpcs-fields-container';
+                                break;
+                            default:
+                                element = createModalField(field, initialValues[field.id]);
+                                break;
                         }
+                        DOM.modalInputsContainer.appendChild(element);
                     });
 
+                    if (isEdit) {
+                        const nationalityRadios = document.querySelectorAll('input[name="nationality"]');
+                        nationalityRadios.forEach(radio => radio.addEventListener('change', () => updateDynamicEditFields(initialValues)));
+                        updateDynamicEditFields(initialValues);
+                    }
+                     
                     const nameInput = DOM.modalInputsContainer.querySelector('#name');
                     const paxInput = DOM.modalInputsContainer.querySelector('#pax');
-
                     if (nameInput && paxInput) {
                         nameInput.addEventListener('input', () => {
-                            if (nameInput.value.trim() !== '' && (paxInput.value.trim() === '' || paxInput.value.trim() === '0')) {
+                            if (nameInput.value.trim() && (!paxInput.value.trim() || paxInput.value.trim() === '0')) {
                                 paxInput.value = '1';
-                                paxInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                paxInput.dispatchEvent(new Event('input', { bubbles: true })); // Trigger validation
                             }
                         });
                     }
-                    
-                    if (isEdit) {
-                        const docContainer = document.getElementById('document-fields-container');
-                        const fpcsContainer = document.getElementById('fpcs-fields-container');
-                        if (docContainer && fpcsContainer) {
-                            const nationalityRadios = document.querySelectorAll('input[name="nationality"]');
-                            const updateDocFields = () => {
-                                const selected = document.querySelector('input[name="nationality"]:checked').value;
-                                docContainer.innerHTML = '';
-                                fpcsContainer.innerHTML = '';
-                                if (selected === 'Local') {
-                                    docContainer.appendChild(createModalField({ id: 'idExpiry', label: 'ID Expiry', type: 'date' }, initialValues.idExpiry || ''));
-                                } else {
-                                    docContainer.appendChild(createModalField({ id: 'passportExpiry', label: 'Passport Expiry', type: 'date' }, initialValues.passportExpiry || ''));
-                                    docContainer.appendChild(createModalField({ id: 'visaExpiry', label: 'Visa Expiry', type: 'date' }, initialValues.visaExpiry || ''));
-                                    const fpcsGroup = document.createElement('div');
-                                    fpcsGroup.className = 'input-group';
-                                    const fpcsLabel = document.createElement('label');
-                                    fpcsLabel.textContent = 'FPCS Registry';
-                                    fpcsGroup.appendChild(fpcsLabel);
-                                    fpcsGroup.appendChild(createRadioGroup('fpcs', ['Yes', 'No'], initialValues.fpcs));
-                                    fpcsContainer.appendChild(fpcsGroup);
-                                }
-                            };
-                            nationalityRadios.forEach(radio => radio.addEventListener('change', updateDocFields));
-                            updateDocFields();
-                        }
-                    }
                     DOM.modalSaveBtn.textContent = saveButtonText;
                 }
+
                 const validate = () => {
                     let isAllValid = true;
                     DOM.modalInputsContainer.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
@@ -945,6 +1047,29 @@
                 DOM.modalOverlay.classList.add('show');
                 DOM.modalInputsContainer.querySelector('input, button')?.focus();
             }
+            
+            function updateDynamicEditFields(initialValues) {
+                const docContainer = document.getElementById('document-fields-container');
+                const fpcsContainer = document.getElementById('fpcs-fields-container');
+                if (!docContainer || !fpcsContainer) return;
+
+                const selectedNationality = document.querySelector('input[name="nationality"]:checked').value;
+                docContainer.innerHTML = '';
+                fpcsContainer.innerHTML = '';
+
+                if (selectedNationality === 'Local') {
+                    docContainer.appendChild(createModalField({ id: 'idExpiry', label: 'ID Expiry', type: 'date' }, initialValues.idExpiry || ''));
+                } else {
+                    docContainer.appendChild(createModalField({ id: 'passportExpiry', label: 'Passport Expiry', type: 'date' }, initialValues.passportExpiry || ''));
+                    docContainer.appendChild(createModalField({ id: 'visaExpiry', label: 'Visa Expiry', type: 'date' }, initialValues.visaExpiry || ''));
+                    const fpcsGroup = document.createElement('div');
+                    fpcsGroup.className = 'input-group';
+                    fpcsGroup.innerHTML = `<label>FPCS Registry</label>`;
+                    fpcsGroup.appendChild(createRadioGroup('fpcs', ['Yes', 'No'], initialValues.fpcs));
+                    fpcsContainer.appendChild(fpcsGroup);
+                }
+            }
+
             function hideModal() {
                 DOM.modalOverlay.classList.remove('show');
                 state.currentModalCallback = null;
@@ -957,9 +1082,7 @@
                 DOM.modalCancelBtn.style.display = 'inline-block';
                 state.isModalOpen = false;
             }
-            function hideContextMenu() {
-                DOM.contextMenu.style.display = 'none';
-            }
+
             function showContextMenu(x, y, items) {
                 DOM.contextMenu.innerHTML = '';
                 items.forEach(item => {
@@ -975,64 +1098,14 @@
                 DOM.contextMenu.style.display = 'block';
             }
 
-            // #################################################################
-            // ## CONCEPTUAL MODULE: events.js
-            // #################################################################
-            
-            async function loadDataFromSheet() {
-                if (state.isModalOpen) {
-                    console.log("Modal is open, skipping background sync.");
-                    return;
-                }
-
-                console.log("Fetching data from Google Sheet...");
-                try {
-                    const response = await fetch(SCRIPT_URL);
-                    if (!response.ok) throw new Error("Failed to load data from sheet.");
-                    const freshData = await response.json();
-                    
-                    const currentDataSignature = JSON.stringify({ rates: state.rates, sections: state.sections });
-                    const freshDataSignature = JSON.stringify(freshData);
-
-                    if (currentDataSignature !== freshDataSignature) {
-                        console.log("New data found from Google Sheet. Refreshing UI.");
-                        state.rates = freshData.rates && Object.keys(freshData.rates).length > 0 ? freshData.rates : state.rates;
-                        state.sections = freshData.sections && freshData.sections.length > 0 ? freshData.sections : state.sections;
-
-                        if (state.sections.length > 0) {
-                            const allTenantIds = state.sections.flatMap(s => s.tenants.map(t => t.id));
-                            state.nextTenantId = Math.max(0, ...allTenantIds) + 1;
-                            const allSectionIds = state.sections.map(s => s.id);
-                            state.nextSectionId = Math.max(0, ...allSectionIds) + 1;
-                        }
-                        
-                        saveStateToLocalStorage();
-                        render();
-                    } else {
-                        console.log("Local cache is up-to-date.");
-                    }
-
-                } catch (error) {
-                    console.error("Could not sync with Google Sheet, running from local cache:", error);
-                }
+            function hideContextMenu() {
+                DOM.contextMenu.style.display = 'none';
             }
 
-            async function saveDataToSheet() {
-                saveStateToLocalStorage(); 
-                console.log("Syncing data to Google Sheet in the background...");
-                try {
-                    await fetch(SCRIPT_URL, {
-                        method: 'POST',
-                        mode: 'no-cors', 
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(state)
-                    });
-                    console.log("Sync successful.");
-                } catch (error) {
-                    console.error("Error syncing data to Google Sheet:", error);
-                }
-            }
 
+            // #################################################################
+            // ##                       EVENT HANDLERS                        ##
+            // #################################################################
             function handleAddSectionClick() {
                 showModal({
                     title: 'Add New Section',
@@ -1045,6 +1118,7 @@
                     }
                 });
             }
+
             function handleSetRateClick() {
                 showModal({
                     title: 'Set Global Rates',
@@ -1064,6 +1138,7 @@
                     }
                 });
             }
+
             function handleAddUnitClick(sectionId) {
                 const section = state.sections.find(s => s.id === sectionId);
                 if (section) {
@@ -1080,11 +1155,12 @@
                     });
                 }
             }
+
             function handleSummaryClick(tenantId) {
-                const isAlreadyExpanded = state.currentlyExpandedTenantId === tenantId;
-                state.currentlyExpandedTenantId = isAlreadyExpanded ? null : tenantId;
+                state.currentlyExpandedTenantId = (state.currentlyExpandedTenantId === tenantId) ? null : tenantId;
                 render();
             }
+
             function handleEditClick(tenantId, onCancelOverride) {
                 state.currentlyEditingTenantId = tenantId;
                 const { tenant } = findTenant(tenantId);
@@ -1097,7 +1173,6 @@
                         formValues[field] = formValues[field].split('T')[0];
                     }
                 });
-
                 if (formValues.name && (!formValues.pax || formValues.pax === '0')) {
                     formValues.pax = '1';
                 }
@@ -1130,34 +1205,14 @@
                         { fieldId: 'pax', validator: (val) => parseFloat(val) > 0, message: 'Pax must be at least 1.' }
                     ],
                     onSave: (newValues) => {
-                        const { leaseStart, tenure } = newValues;
-                        if (leaseStart && tenure) {
-                            const tenureMonths = parseInt(tenure, 10);
-                            if (!isNaN(tenureMonths)) {
-                                const startDate = new Date(leaseStart);
-                                if (!isNaN(startDate.getTime())) {
-                                    let targetMonth = startDate.getUTCMonth() + tenureMonths;
-                                    let targetYear = startDate.getUTCFullYear();
-                                    targetYear += Math.floor(targetMonth / 12);
-                                    targetMonth %= 12;
-                                    const nextDay = new Date(startDate);
-                                    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-                                    const isLastDayOfMonth = nextDay.getUTCMonth() !== startDate.getUTCMonth();
-                                    const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-                                    let endDay = startDate.getUTCDate();
-                                    if (isLastDayOfMonth || endDay > daysInTargetMonth) {
-                                        endDay = daysInTargetMonth;
-                                    }
-                                    const endDate = new Date(Date.UTC(targetYear, targetMonth, endDay));
-                                    newValues.leaseEnd = endDate.toISOString().split('T')[0];
-                                }
-                            }
+                        if (newValues.leaseStart && newValues.tenure) {
+                           newValues.leaseEnd = calculateLeaseEndDate(newValues.leaseStart, newValues.tenure);
                         }
-                        if (leaseStart !== tenant.leaseStart) {
-                            newValues.currentBillingDate = calculateFirstBillingDate(leaseStart);
+                        if (newValues.leaseStart !== tenant.leaseStart) {
+                            newValues.currentBillingDate = calculateFirstBillingDate(newValues.leaseStart);
                         }
                         if (newValues.nationality === 'Local') {
-                            newValues.passportExpiry = ''; newValues.visaExpiry = ''; newValues.fpcs = 'No';
+                            Object.assign(newValues, { passportExpiry: '', visaExpiry: '', fpcs: 'No' });
                         } else {
                             newValues.idExpiry = '';
                         }
@@ -1168,63 +1223,60 @@
                     onCancel: onCancelOverride
                 });
             }
+
             function handlePaidClick(tenantId) {
                 const { tenant } = findTenant(tenantId);
                 if (!tenant) return;
-                const elecUsage = (tenant.elecCurrent !== "" && tenant.elecCurrent != null) ? Number(tenant.elecCurrent) - Number(tenant.elecPrev) : 0;
-                const waterUsage = (tenant.waterCurrent !== "" && tenant.waterCurrent != null) ? Number(tenant.waterCurrent) - Number(tenant.waterPrev) : 0;
-                const elecBilling = elecUsage * state.rates.electricity;
-                const waterBilling = waterUsage * state.rates.water;
-                const parkingBilling = (tenant.vehicles?.length || 0) * state.rates.parking;
-                const totalBilling = elecBilling + waterBilling + parseFloat(tenant.rent || 0) + parseFloat(tenant.other || 0) + parkingBilling;
+                const { totalBilling } = getBillingInfo(tenant);
+
                 showModal({
                     title: "Confirm Payment",
                     isConfirmation: true,
                     confirmationText: `Mark payment for ${tenant.name} (Unit ${tenant.unit}) as paid? This will advance the billing date and reset usage meters.`,
                     onSave: () => {
+                         const { elecBilling, waterBilling, parkingBilling } = getBillingInfo(tenant);
+                         const elecUsage = (tenant.elecCurrent || 0) - (tenant.elecPrev || 0);
+                         const waterUsage = (tenant.waterCurrent || 0) - (tenant.waterPrev || 0);
                         const historyEntry = {
                             billingDate: tenant.currentBillingDate,
                             elecUsage: `${elecUsage} Kwh`, waterUsage: `${waterUsage} m³`,
                             rent: parseFloat(tenant.rent || 0), other: parseFloat(tenant.other || 0), parking: parkingBilling,
                             totalPaid: totalBilling, paidOn: new Date().toISOString().split('T')[0]
                         };
-                        if (!tenant.paymentHistory) { tenant.paymentHistory = []; }
+                        
+                        if (!tenant.paymentHistory) tenant.paymentHistory = [];
                         tenant.paymentHistory.push(historyEntry);
-                        tenant.currentBillingDate = calculateNextBillingDate(tenant.currentBillingDate);
-                        tenant.elecPrev = tenant.elecCurrent;
-                        tenant.waterPrev = tenant.waterCurrent;
-                        tenant.elecCurrent = "";
-                        tenant.waterCurrent = "";
-                        tenant.other = 0;
+                        
+                        Object.assign(tenant, {
+                            currentBillingDate: calculateNextBillingDate(tenant.currentBillingDate),
+                            elecPrev: tenant.elecCurrent,
+                            waterPrev: tenant.waterCurrent,
+                            elecCurrent: "",
+                            waterCurrent: "",
+                            other: ""
+                        });
+
                         render();
                         saveDataToSheet();
                     }
                 });
             }
+
             function handleBillClick(tenantId) {
                 const { tenant } = findTenant(tenantId);
                 if (!tenant) return;
-
                 showModal({
                     title: `Enter New Readings for ${tenant.name}`,
                     fields: [
-                        { id: 'elecCurrent', label: `Electricity New (Kwh) - Prev: ${tenant.elecPrev}`, type: 'number' },
-                        { id: 'waterCurrent', label: `Water New (m³) - Prev: ${tenant.waterPrev}`, type: 'number' },
+                        { id: 'elecCurrent', label: `Electricity New (Kwh) - Prev: ${tenant.elecPrev || 0}`, type: 'number' },
+                        { id: 'waterCurrent', label: `Water New (m³) - Prev: ${tenant.waterPrev || 0}`, type: 'number' },
                         { id: 'other', label: 'Other Fees (USD)', type: 'number' },
                     ],
                     initialValues: tenant,
                     requiredFields: ['elecCurrent', 'waterCurrent'],
                     validationRules: [
-                        {
-                            fieldId: 'elecCurrent',
-                            validator: (val) => parseFloat(val) >= parseFloat(tenant.elecPrev || 0),
-                            message: `New reading cannot be less than previous (${tenant.elecPrev}).`
-                        },
-                        {
-                            fieldId: 'waterCurrent',
-                            validator: (val) => parseFloat(val) >= parseFloat(tenant.waterPrev || 0),
-                            message: `New reading cannot be less than previous (${tenant.waterPrev}).`
-                        }
+                        { fieldId: 'elecCurrent', validator: val => parseFloat(val) >= parseFloat(tenant.elecPrev || 0), message: `New reading cannot be less than previous (${tenant.elecPrev || 0}).` },
+                        { fieldId: 'waterCurrent', validator: val => parseFloat(val) >= parseFloat(tenant.waterPrev || 0), message: `New reading cannot be less than previous (${tenant.waterPrev || 0}).` }
                     ],
                     onSave: (newReadings) => {
                         tenant.elecCurrent = parseFloat(newReadings.elecCurrent) || tenant.elecPrev;
@@ -1235,10 +1287,20 @@
                     }
                 });
             }
+
             function handleHistoryClick(tenantId) {
                 const { tenant } = findTenant(tenantId);
-                if (!tenant || !tenant.paymentHistory || tenant.paymentHistory.length === 0) return;
-                let historyHtml = `
+                if (!tenant?.paymentHistory?.length) return;
+
+                const historyRows = [...tenant.paymentHistory].reverse().map(entry => `
+                    <tr>
+                        <td>${formatDate(entry.billingDate)}</td><td>${entry.elecUsage}</td><td>${entry.waterUsage}</td>
+                        <td>${(entry.rent || 0).toFixed(2)}</td><td>${(entry.other || 0).toFixed(2)}</td><td>${(entry.parking || 0).toFixed(2)}</td>
+                        <td><strong>${(entry.totalPaid || 0).toFixed(2)}</strong></td>
+                    </tr>`
+                ).join('');
+
+                const historyHtml = `
                     <style>
                         .history-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
                         .history-table th, .history-table td { padding: 8px 12px; border: 1px solid var(--border-color); text-align: left; }
@@ -1248,16 +1310,9 @@
                     </style>
                     <table class="history-table">
                         <thead><tr><th>Billing Date</th><th>Elec.</th><th>Water</th><th>Rent</th><th>Other</th><th>Parking</th><th>Total</th></tr></thead>
-                        <tbody>`;
-                [...tenant.paymentHistory].reverse().forEach(entry => {
-                    historyHtml += `
-                        <tr>
-                            <td>${formatDate(entry.billingDate)}</td><td>${entry.elecUsage}</td><td>${entry.waterUsage}</td>
-                            <td>${(entry.rent || 0).toFixed(2)}</td><td>${(entry.other || 0).toFixed(2)}</td><td>${(entry.parking || 0).toFixed(2)}</td>
-                            <td><strong>${(entry.totalPaid || 0).toFixed(2)}</strong></td>
-                        </tr>`;
-                });
-                historyHtml += `</tbody></table>`;
+                        <tbody>${historyRows}</tbody>
+                    </table>`;
+                
                 showModal({
                     title: `Payment History: ${tenant.name}`,
                     isConfirmation: true,
@@ -1267,6 +1322,7 @@
                 });
                 DOM.modalCancelBtn.style.display = 'none';
             }
+
             function handleDeleteClick(tenantId) {
                 const { tenant } = findTenant(tenantId);
                 if (!tenant) return;
@@ -1274,17 +1330,15 @@
                     title: `Delete Tenant in Unit ${tenant.unit}?`, isConfirmation: true, isDelete: true,
                     confirmationText: "This will clear all tenant data from the unit but keep the unit itself. This action cannot be undone. To proceed, type 'confirm' below.",
                     onSave: () => {
-                        Object.keys(tenant).forEach(key => {
-                            if (key !== 'id' && key !== 'unit' && key !== 'sectionId') {
-                                tenant[key] = state.defaultTenantState[key];
-                            }
+                        Object.keys(state.defaultTenantState).forEach(key => {
+                            tenant[key] = state.defaultTenantState[key];
                         });
-                        tenant.paymentHistory = [];
                         render();
                         saveDataToSheet();
                     }
                 });
             }
+
             function handleDeleteUnitEntirely(tenantId) {
                 const { tenant, section } = findTenant(tenantId);
                 if (!tenant || !section) return;
@@ -1298,6 +1352,7 @@
                     }
                 });
             }
+
             function handleDeleteSection(sectionId) {
                 const section = state.sections.find(s => s.id === sectionId);
                 if (!section) return;
@@ -1311,6 +1366,7 @@
                     }
                 });
             }
+
             function handleModalSave() {
                 if (!state.currentModalCallback) { hideModal(); return; }
                 const values = {};
@@ -1324,32 +1380,33 @@
                 const vehicleContainer = DOM.modalInputsContainer.querySelector('#vehicle-input-container');
                 if (vehicleContainer) {
                     const vehicleInputs = vehicleContainer.querySelectorAll('.vehicle-input');
-                    values.vehicles = Array.from(vehicleInputs).map(input => input.value.trim()).filter(value => value);
+                    values.vehicles = Array.from(vehicleInputs).map(input => input.value.trim()).filter(Boolean);
                 }
-                const shouldHide = state.currentModalCallback(values);
-                if (shouldHide !== false) {
+                if (state.currentModalCallback(values) !== false) {
                     hideModal();
                 }
             }
+
             function handleModalCancel() {
                 if (state.currentModalCancelCallback) {
-                    const shouldHide = state.currentModalCancelCallback();
-                    if (shouldHide !== false) { hideModal(); }
+                    if (state.currentModalCancelCallback() !== false) hideModal();
                 } else {
                     hideModal();
                 }
             }
+
             function handleModalRenew() {
                 const tenantId = state.currentlyEditingTenantId;
                 if (!tenantId) return;
                 const { tenant } = findTenant(tenantId);
                 if (!tenant) return;
                 const originalLeaseData = { leaseStart: tenant.leaseStart, leaseEnd: tenant.leaseEnd, tenure: tenant.tenure, currentBillingDate: tenant.currentBillingDate };
+                
                 showModal({
                     title: "Confirm Renewal", isConfirmation: true,
                     confirmationText: "Are you sure you want to renew this lease? This will clear the current lease start, tenure, and billing date fields, allowing you to enter new ones.",
                     onSave: () => {
-                        tenant.leaseStart = ''; tenant.tenure = ''; tenant.currentBillingDate = ''; tenant.leaseEnd = '';
+                        Object.assign(tenant, { leaseStart: '', tenure: '', currentBillingDate: '', leaseEnd: '' });
                         handleEditClick(tenantId, () => {
                             const { tenant: tenantToRestore } = findTenant(tenantId);
                             if (tenantToRestore) {
@@ -1363,6 +1420,9 @@
                 });
             }
             
+            // #################################################################
+            // ##                    INITIALIZATION & BINDING                 ##
+            // #################################################################
             function init() {
                 loadDataFromSheet();
 
@@ -1370,21 +1430,22 @@
                     const target = event.target;
                     const tenantItem = target.closest('.tenant-item');
                     const tenantId = tenantItem ? parseInt(tenantItem.dataset.tenantId, 10) : null;
-                    if (target.closest('.add-tenant-btn')) {
-                        const sectionId = parseInt(target.closest('.add-tenant-btn').dataset.sectionId, 10);
-                        handleAddUnitClick(sectionId);
-                    } else if (target.closest('.tenant-summary')) {
-                        handleSummaryClick(tenantId);
-                    } else if (target.closest('.edt-btn')) {
-                        handleEditClick(tenantId);
-                    } else if (target.closest('.paid-btn')) {
-                        handlePaidClick(tenantId);
-                    } else if (target.closest('.bill-btn')) {
-                        handleBillClick(tenantId);
-                    } else if (target.closest('.dlt-btn')) {
-                        handleDeleteClick(tenantId);
-                    } else if (target.closest('.history-btn')) {
-                        handleHistoryClick(tenantId);
+
+                    const actions = {
+                        'add-tenant-btn': () => handleAddUnitClick(parseInt(target.dataset.sectionId, 10)),
+                        'tenant-summary': () => handleSummaryClick(tenantId),
+                        'edt-btn': () => handleEditClick(tenantId),
+                        'paid-btn': () => handlePaidClick(tenantId),
+                        'bill-btn': () => handleBillClick(tenantId),
+                        'dlt-btn': () => handleDeleteClick(tenantId),
+                        'history-btn': () => handleHistoryClick(tenantId),
+                    };
+
+                    for (const cls in actions) {
+                        if (target.closest(`.${cls}`)) {
+                            actions[cls]();
+                            return;
+                        }
                     }
                 });
 
@@ -1392,6 +1453,7 @@
                     hideContextMenu();
                     const sectionHeader = event.target.closest('.floor-header h2');
                     const tenantSummary = event.target.closest('.tenant-summary');
+                    
                     if (sectionHeader) {
                         event.preventDefault();
                         const sectionId = parseInt(event.target.closest('.floor-container').dataset.sectionId, 10);
@@ -1408,18 +1470,11 @@
                     if (!target) return;
                     const { action, id } = target.dataset;
                     const numericId = parseInt(id, 10);
-                    if (action === 'delete-section') { handleDeleteSection(numericId); } 
-                    else if (action === 'delete-unit') { handleDeleteUnitEntirely(numericId); }
+                    if (action === 'delete-section') handleDeleteSection(numericId);
+                    else if (action === 'delete-unit') handleDeleteUnitEntirely(numericId);
                     hideContextMenu();
                 });
 
-                window.addEventListener('click', hideContextMenu);
-                DOM.addSectionBtn.addEventListener('click', handleAddSectionClick);
-                DOM.setRateBtn.addEventListener('click', handleSetRateClick);
-                DOM.modalSaveBtn.addEventListener('click', handleModalSave);
-                DOM.modalCancelBtn.addEventListener('click', handleModalCancel);
-                DOM.modalRenewBtn.addEventListener('click', handleModalRenew);
-                
                 DOM.modalInputsContainer.addEventListener('click', event => {
                     if (event.target.id === 'add-vehicle-btn') {
                         document.getElementById('vehicle-input-container').appendChild(createVehicleInput());
@@ -1428,7 +1483,16 @@
                         event.target.closest('.vehicle-input-group').remove();
                     }
                 });
+
+                // Global listeners
+                window.addEventListener('click', hideContextMenu);
+                DOM.addSectionBtn.addEventListener('click', handleAddSectionClick);
+                DOM.setRateBtn.addEventListener('click', handleSetRateClick);
+                DOM.modalSaveBtn.addEventListener('click', handleModalSave);
+                DOM.modalCancelBtn.addEventListener('click', handleModalCancel);
+                DOM.modalRenewBtn.addEventListener('click', handleModalRenew);
             }
+
             document.addEventListener('DOMContentLoaded', init);
         })();
     </script>
