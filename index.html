@@ -568,28 +568,8 @@
                 currentModalCancelCallback: null,
                 currentlyExpandedTenantId: null,
                 currentlyEditingTenantId: null,
+                isModalOpen: false, 
             };
-
-             function saveStateToLocalStorage() {
-                try {
-                    const stateToSave = { rates: state.rates, sections: state.sections };
-                    localStorage.setItem('tenantAppData', JSON.stringify(stateToSave));
-                } catch (e) {
-                    console.error("Error saving state to localStorage", e);
-                }
-            }
-
-            function loadStateFromLocalStorage() {
-                try {
-                    const savedState = localStorage.getItem('tenantAppData');
-                    if (savedState) {
-                        const parsedState = JSON.parse(savedState);
-                        Object.assign(state, parsedState);
-                    }
-                } catch (e) {
-                    console.error("Error loading state from localStorage", e);
-                }
-            }
 
 
             // #################################################################
@@ -609,6 +589,12 @@
             };
 
             const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxoNBzSqC6pR4QuRTDlxsBOYUj5180vCz1KbeRbWb3P21OLW4ne28XV7HZvhfCbeqpf/exec";
+
+            function showLoading(isLoading) {
+                DOM.addSectionBtn.disabled = isLoading;
+                DOM.setRateBtn.disabled = isLoading;
+                DOM.addSectionBtn.textContent = isLoading ? "Loading..." : "+ add section";
+            }
 
             function formatDate(isoString) {
                 if (!isoString) { return ""; }
@@ -666,22 +652,31 @@
                 const waterBilling = waterUsage * state.rates.water;
                 const parkingBilling = (tenant.vehicles?.length || 0) * state.rates.parking;
                 const totalBilling = elecBilling + waterBilling + parseFloat(tenant.rent || 0) + parseFloat(tenant.other || 0) + parkingBilling;
-                const now = new Date();
-                const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-                const currentBillingDateObj = tenant.currentBillingDate ? new Date(tenant.currentBillingDate) : null;
-                let badgeText = 'Paid';
-                let badgeClass = 'status-paid';
+                
+                let badgeHTML = '';
                 let showActionButtons = false;
-                if (currentBillingDateObj && !isNaN(currentBillingDateObj.getTime())) {
-                    const threeDaysBeforeBilling = new Date(currentBillingDateObj);
-                    threeDaysBeforeBilling.setUTCDate(threeDaysBeforeBilling.getUTCDate() - 3);
-                    if (today > currentBillingDateObj) {
-                        badgeText = 'Overdue'; badgeClass = 'status-overdue'; showActionButtons = true;
-                    } else if (today >= threeDaysBeforeBilling) {
-                        badgeText = 'Billing'; badgeClass = 'status-billing'; showActionButtons = true;
+                let showPaidButton = false;
+
+                if (tenant.name) {
+                    const now = new Date();
+                    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+                    const currentBillingDateObj = tenant.currentBillingDate ? new Date(tenant.currentBillingDate) : null;
+                    let badgeText = 'Paid';
+                    let badgeClass = 'status-paid';
+                    
+                    if (currentBillingDateObj && !isNaN(currentBillingDateObj.getTime())) {
+                        const threeDaysBeforeBilling = new Date(currentBillingDateObj);
+                        threeDaysBeforeBilling.setUTCDate(threeDaysBeforeBilling.getUTCDate() - 3);
+                        if (today > currentBillingDateObj) {
+                            badgeText = 'Overdue'; badgeClass = 'status-overdue'; showActionButtons = true;
+                        } else if (today >= threeDaysBeforeBilling) {
+                            badgeText = 'Billing'; badgeClass = 'status-billing'; showActionButtons = true;
+                        }
                     }
+                    badgeHTML = `<span class="tenant-status-badge ${badgeClass}">${badgeText}</span>`;
+                    showPaidButton = showActionButtons && tenant.elecCurrent !== "" && tenant.elecCurrent != null && tenant.waterCurrent !== "" && tenant.waterCurrent != null;
                 }
-                const showPaidButton = showActionButtons && tenant.elecCurrent !== "" && tenant.waterCurrent !== "";
+                
                 const leaseEndClass = isDateExpiring(tenant.leaseEnd) ? 'class="expiring-date"' : '';
                 let documentDetails = '';
                 if (tenant.nationality === 'Local') {
@@ -695,6 +690,10 @@
                 const contactDetails = tenant.nationality === 'Local' ? `<span>Phone: ${tenant.phone}</span><span>Pax: ${tenant.pax || ''}</span>` : `<span>Phone: ${tenant.phone}</span><span>FPCS Registry: ${tenant.fpcs}</span><span>Pax: ${tenant.pax || ''}</span>`;
                 const vehicleListHTML = (tenant.vehicles && tenant.vehicles.length > 0) ? `<span>${tenant.vehicles.join('<br>')}</span>` : '';
                 const historyButtonHTML = (tenant.paymentHistory && tenant.paymentHistory.length > 0) ? '<button class="history-btn">History</button>' : '';
+                
+                const billButtonHTML = showActionButtons ? '<button class="bill-btn">Bill</button>' : '';
+                const paidButtonHTML = showPaidButton ? '<button class="paid-btn">Paid</button>' : '';
+                
                 const listItem = document.createElement('li');
                 listItem.className = 'tenant-item';
                 listItem.dataset.tenantId = tenant.id;
@@ -702,7 +701,7 @@
                 listItem.innerHTML = `
                     <div class="tenant-summary">
                         <div class="tenant-details"><span class="tenant-name">${tenant.name || 'No Name Assigned'}</span><span class="tenant-unit">Unit: ${tenant.unit}</span></div>
-                        <span class="tenant-status-badge ${badgeClass}">${badgeText}</span>
+                        ${badgeHTML}
                     </div>
                     <div class="tenant-expanded-details">
                         <div class="details-grid">
@@ -715,8 +714,8 @@
                             <div class="details-section"><strong>Payment</strong><span>Billing Date: ${formatDate(tenant.currentBillingDate)}</span><span>Rent: ${tenant.rent ? tenant.rent + ' USD' : ''}</span><span>Other: ${tenant.other ? tenant.other + ' USD' : ''}</span><strong>Total billing: ${totalBilling > 0 ? totalBilling.toFixed(2) + ' USD' : ''}</strong></div>
                         </div>
                         <div class="details-actions">
-                           <div class="action-buttons-left"><button class="dlt-btn">Delete</button><button class="edt-btn">Edit</button>${historyButtonHTML}${showActionButtons ? '<button class="bill-btn">Bill</button>' : ''}</div>
-                           <div class="action-buttons-right">${showPaidButton ? '<button class="paid-btn">Paid</button>' : ''}</div>
+                           <div class="action-buttons-left"><button class="dlt-btn">Delete</button><button class="edt-btn">Edit</button>${historyButtonHTML}${billButtonHTML}</div>
+                           <div class="action-buttons-right">${paidButtonHTML}</div>
                         </div>
                     </div>`;
                 return listItem;
@@ -816,6 +815,7 @@
             }
 
             function showModal(config) {
+                state.isModalOpen = true; 
                 if (currentValidationHandler) {
                     DOM.modalInputsContainer.removeEventListener('input', currentValidationHandler);
                     currentValidationHandler = null;
@@ -955,6 +955,7 @@
                     currentValidationHandler = null;
                 }
                 DOM.modalCancelBtn.style.display = 'inline-block';
+                state.isModalOpen = false;
             }
             function hideContextMenu() {
                 DOM.contextMenu.style.display = 'none';
@@ -979,6 +980,11 @@
             // #################################################################
             
             async function loadDataFromSheet() {
+                if (state.isModalOpen) {
+                    console.log("Modal is open, skipping background sync.");
+                    return;
+                }
+
                 console.log("Fetching data from Google Sheet...");
                 try {
                     const response = await fetch(SCRIPT_URL);
@@ -1358,12 +1364,7 @@
             }
             
             function init() {
-                loadStateFromLocalStorage();
-                render();
-                
                 loadDataFromSheet();
-
-                setInterval(loadDataFromSheet, 30000); 
 
                 DOM.sectionsContainer.addEventListener('click', (event) => {
                     const target = event.target;
