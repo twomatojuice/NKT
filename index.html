@@ -1187,8 +1187,10 @@
                 
                 const totalIncome = incomeUnit + incomeConsumption + incomeParking + incomeOther;
                 const totalExpense = (currentExpenses.salary || 0) + (currentExpenses.maintenance || 0) + (currentExpenses.tax || 0) + (currentExpenses.other || 0);
-                const totalProfit = totalIncome - totalExpense;
-                const netProfit = totalProfit > 0 ? totalProfit * 0.9 : 0;
+                
+                // --- MODIFIED PROFIT LOGIC ---
+                const totalProfit = totalIncome; // Total Profit is now just Total Income
+                const netProfit = totalIncome - totalExpense; // Net Profit is Total Income - Total Expense
 
                 DOM.overviewIncomeUnit.textContent = `${incomeUnit.toFixed(2)} USD`;
                 DOM.overviewIncomeConsumption.textContent = `${incomeConsumption.toFixed(2)} USD`;
