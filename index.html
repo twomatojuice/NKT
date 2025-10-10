@@ -50,9 +50,9 @@
             top: 20px;
         }
         .calendar-container {
-            flex: 0 0 auto; /* Don't grow or shrink, size is based on content */
+            flex: 0 0 auto; 
             background-color: var(--card-background);
-            padding: 2rem; /* Adjusted to match tenant info card */
+            padding: 2rem; 
             border-radius: 12px;
             border: 1px solid var(--border-color);
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
@@ -60,9 +60,9 @@
         .calendar-header {
             display: flex;
             justify-content: space-between;
-            align-items: baseline; /* Align text baselines */
+            align-items: baseline; 
             margin-bottom: 1rem;
-            padding-bottom: 1rem; /* Match main-header */
+            padding-bottom: 1rem; 
             border-bottom: 1px solid var(--border-color);
         }
         .calendar-header h2 {
@@ -104,19 +104,19 @@
         }
         .calendar-grid {
             display: grid;
-            grid-template-columns: repeat(7, 72px); /* Explicitly define column widths */
+            grid-template-columns: repeat(7, 72px); 
             text-align: center;
             gap: 5px;
         }
         .calendar-day {
-            height: 72px; /* Set height to create a square */
+            height: 72px; 
             padding: 4px;
             border: 1px solid var(--border-color);
             border-radius: 6px;
             font-size: 0.8rem;
             transition: background-color 0.2s;
             overflow: hidden;
-            box-sizing: border-box; /* Ensures padding is included in the total size */
+            box-sizing: border-box; 
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
@@ -127,7 +127,7 @@
             cursor: pointer;
         }
         .calendar-day.has-events:hover {
-            background-color: #c3e6cb; /* A slightly darker shade */
+            background-color: #c3e6cb; 
         }
         .calendar-day.has-paid-events {
             background-color: var(--paid-marker-bg-color);
@@ -187,7 +187,6 @@
             border: 1px solid var(--border-color);
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
-
         .overview-container h2 {
             margin: 0 0 1rem 0;
             font-size: 2rem;
@@ -197,11 +196,9 @@
             padding-bottom: 1rem;
             border-bottom: 1px solid var(--border-color);
         }
-
         .overview-section {
             margin-bottom: 1.5rem;
         }
-
         .overview-section h3 {
             font-size: 1rem;
             font-weight: 600;
@@ -212,7 +209,6 @@
             color: var(--secondary-text-color);
             cursor: pointer;
         }
-
         .overview-item {
             display: flex;
             justify-content: space-between;
@@ -221,34 +217,29 @@
             padding: 0.5rem 0;
             border-bottom: 1px solid #f1f3f5;
         }
-
         .overview-item span:last-child {
             font-weight: 500;
             color: var(--primary-text-color);
         }
-
         .overview-totals {
             padding-top: 1rem;
             margin-top: 1rem;
             border-top: 1px solid var(--border-color);
         }
-
         .overview-item.total {
             font-size: 1rem;
             font-weight: 600;
             color: var(--primary-text-color);
             border-bottom: none;
         }
-
         .overview-item.total span:last-child {
             font-size: 1.1rem;
         }
-
         .main-container {
             flex: 2;
             width: 100%;
             max-width: 900px;
-            margin: 0; /* Reset margin */
+            margin: 0; 
             background-color: var(--card-background);
             padding: 2rem;
             border-radius: 12px;
@@ -258,7 +249,7 @@
         .main-header {
             display: flex;
             justify-content: space-between;
-            align-items: baseline; /* Align text baselines */
+            align-items: baseline; 
             flex-wrap: wrap;
             gap: 1rem;
             padding-bottom: 1rem;
@@ -823,9 +814,6 @@
     <script>
         (function() {
             'use strict';
-            // #################################################################
-            // ##                         APPLICATION STATE                   ##
-            // #################################################################
             const state = {
                 rates: { electricity: 0.25, water: 1.0, parking: 50.0 },
                 sections: [],
@@ -844,13 +832,9 @@
                 currentlyEditingTenantId: null,
                 isModalOpen: false,
                 calendarDate: new Date(),
-                // Temporary store for calendar event data to be used by modals
                 tempCalendarData: { billing: {}, paid: {} },
             };
 
-            // #################################################################
-            // ##                         API & DATA SYNC                     ##
-            // #################################################################
             const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxoNBzSqC6pR4QuRTDlxsBOYUj5180vCz1KbeRbWb3P21OLW4ne28XV7HZvhfCbeqpf/exec";
 
             async function loadDataFromSheet() {
@@ -863,7 +847,7 @@
                     const response = await fetch(SCRIPT_URL);
                     if (!response.ok) throw new Error("Failed to load data from sheet.");
                     const freshData = await response.json();
-                                        const currentDataSignature = JSON.stringify({ rates: state.rates, sections: state.sections, expenses: state.expenses });
+                                    const currentDataSignature = JSON.stringify({ rates: state.rates, sections: state.sections, expenses: state.expenses });
                     const freshDataSignature = JSON.stringify(freshData);
 
                     if (currentDataSignature !== freshDataSignature) {
@@ -878,7 +862,7 @@
                             const allSectionIds = state.sections.map(s => s.id);
                             state.nextSectionId = Math.max(0, ...allSectionIds) + 1;
                         }
-                                                render();
+                                        render();
                     } else {
                         console.log("Local cache is up-to-date.");
                     }
@@ -886,33 +870,30 @@
                     console.error("Could not sync with Google Sheet, running from local cache:", error);
                 }
             }
-            async function saveDataToSheet() {
-                console.log("Syncing data to Google Sheet in the background...");
+            
+            async function sendActionToServer(action, payload) {
+                console.log(`Sending action: ${action}`, payload);
                 try {
-                    // Removed 'no-cors' to allow the request body to be sent and a response to be read.
                     const response = await fetch(SCRIPT_URL, {
                         method: 'POST',
                         headers: {
-                            // Using text/plain is more robust for Apps Script web apps
-                            'Content-Type': 'text/plain;charset=utf-8', 
+                            'Content-Type': 'text/plain;charset=utf-8',
                         },
-                        body: JSON.stringify(state)
+                        body: JSON.stringify({ action, payload })
                     });
-            
-                    // Now we can check the response from the server for success or failure
                     const result = await response.json();
                     if (result.status === "success") {
-                        console.log("Sync successful:", result.message);
+                        console.log("Action successful:", result.message);
                     } else {
-                        console.error("Sync failed:", result.message);
+                        console.error("Action failed:", result.message);
+                        alert("Could not save data to the server. Please refresh and try again. Error: " + result.message);
                     }
                 } catch (error) {
-                    console.error("Error syncing data to Google Sheet:", error);
+                    console.error("Error sending action to server:", error);
+                    alert("Could not connect to the server to save data. Please check your internet connection.");
                 }
             }
-            // #################################################################
-            // ##                           DOM SELECTORS                     ##
-            // #################################################################
+
             const DOM = {
                 sectionsContainer: document.getElementById('sections-container'),
                 addSectionBtn: document.getElementById('add-section-btn'),
@@ -941,11 +922,6 @@
                 expenseHeader: document.getElementById('expense-header'),
             };
 
-            // #################################################################
-            // ##                             UTILITIES                       ##
-            // #################################################################
-
-            /** Formats an ISO date string to DD-MM-YYYY format. */
             function formatDate(isoString) {
                 if (!isoString) return "";
                 const date = new Date(isoString);
@@ -956,7 +932,6 @@
                 return `${day}-${month}-${year}`;
             }
 
-            /** Formats an ISO date string to DD/MM/YYYY format for modal titles. */
             function formatDateForModalTitle(isoString) {
                 if (!isoString) return "";
                 const date = new Date(isoString);
@@ -967,17 +942,16 @@
                 return `${day}/${month}/${year}`;
             }
 
-            /** Checks if a date is within the next 30 days. */
             function isDateExpiring(isoDateString) {
                 if (!isoDateString) return false;
                 const date = new Date(isoDateString);
                 if (isNaN(date.getTime())) return false;
-                                const now = new Date();
+                        const now = new Date();
                 const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
                 const thirtyDaysFromNow = new Date(today);
                 thirtyDaysFromNow.setUTCDate(today.getUTCDate() + 30);
                 const inputDateUTC = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-                                return inputDateUTC <= thirtyDaysFromNow && inputDateUTC >= today;
+                        return inputDateUTC <= thirtyDaysFromNow && inputDateUTC >= today;
             }
 
             function addMonthsAndClamp(isoDate, months) {
@@ -986,21 +960,17 @@
 
                 const originalDay = date.getUTCDate();
                 
-                // Set the date to the first of the month before adding months to avoid rollover issues
                 date.setUTCDate(1);
                 date.setUTCMonth(date.getUTCMonth() + months);
 
-                // Get the last day of the new month
                 const daysInMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
                 
-                // Set the day to the original day, or the last day of the month if it's shorter
                 date.setUTCDate(Math.min(originalDay, daysInMonth));
                 
                 return date.toISOString().split('T')[0];
             }
 
 
-            /** Calculates the next billing date by adding one month, handling end-of-month logic. */
             function calculateNextBillingDate(currentBillingISO, leaseStartISO) {
                 if (leaseStartISO) {
                     const leaseStartDate = new Date(leaseStartISO + 'T00:00:00Z');
@@ -1008,9 +978,7 @@
                     
                     let monthsElapsed = (currentBillingDate.getUTCFullYear() - leaseStartDate.getUTCFullYear()) * 12 + (currentBillingDate.getUTCMonth() - leaseStartDate.getUTCMonth());
                     
-                    // If the billing day is less than the lease start day, it implies we've just crossed a shorter month boundary.
                     if (currentBillingDate.getUTCDate() < leaseStartDate.getUTCDate()) {
-                        // This ensures we calculate the next month from the lease start, not the adjusted date.
                     } else {
                        monthsElapsed++;
                     }
@@ -1018,16 +986,13 @@
                     return addMonthsAndClamp(leaseStartISO, monthsElapsed);
                 }
                 
-                // Fallback for older data or cases without a lease start
                 return addMonthsAndClamp(currentBillingISO, 1);
             }
 
-            /** Calculates the first billing date from the lease start date. */
             function calculateFirstBillingDate(leaseStart) {
                 return addMonthsAndClamp(leaseStart, 1);
             }
 
-            /** Finds a tenant by their ID. */
             function findTenant(tenantId) {
                 for (const section of state.sections) {
                     const tenant = section.tenants.find(t => t.id === tenantId);
@@ -1036,17 +1001,13 @@
                 return { tenant: null, section: null };
             }
 
-            /** Calculates the lease end date based on start and tenure. */
             function calculateLeaseEndDate(leaseStart, tenure) {
                 const tenureMonths = parseInt(tenure, 10);
                  if (isNaN(tenureMonths) || !leaseStart) return null;
                 return addMonthsAndClamp(leaseStart, tenureMonths);
             }
 
-            // #################################################################
-            // ##                           UI RENDERING                      ##
-            // #################################################################
-             function renderOverview() {
+            function renderOverview() {
                 const date = state.calendarDate;
                 const year = date.getFullYear();
                 const month = date.getMonth();
@@ -1068,7 +1029,6 @@
                             incomeParking += entry.parking || 0;
                             incomeOther += entry.other || 0;
 
-                            // Calculate consumption costs from usage strings
                             const elecUsage = parseFloat(entry.elecUsage) || 0;
                             const waterUsage = parseFloat(entry.waterUsage) || 0;
                             incomeConsumption += (elecUsage * state.rates.electricity) + (waterUsage * state.rates.water);
@@ -1082,9 +1042,8 @@
                 const totalIncome = incomeUnit + incomeConsumption + incomeParking + incomeOther;
                 const totalExpense = currentExpenses.salary + currentExpenses.maintenance + currentExpenses.tax + currentExpenses.other;
                 const totalProfit = totalIncome - totalExpense;
-                const netProfit = totalProfit > 0 ? totalProfit * 0.9 : 0; // Assuming 10% tax on profit for net
+                const netProfit = totalProfit > 0 ? totalProfit * 0.9 : 0; 
 
-                // Update DOM
                 DOM.overviewIncomeUnit.textContent = `${incomeUnit.toFixed(2)} USD`;
                 DOM.overviewIncomeConsumption.textContent = `${incomeConsumption.toFixed(2)} USD`;
                 DOM.overviewIncomeParking.textContent = `${incomeParking.toFixed(2)} USD`;
@@ -1098,7 +1057,6 @@
                 DOM.overviewTotalProfit.textContent = `${totalProfit.toFixed(2)} USD`;
                 DOM.overviewNetProfit.textContent = `${netProfit.toFixed(2)} USD`;
             }
-            /** Renders the calendar view for the month in the current state. */
             function renderCalendar() {
                 const date = state.calendarDate;
                 const year = date.getFullYear();
@@ -1107,7 +1065,6 @@
                 DOM.calendarMonthYear.textContent = date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
                 DOM.calendarGrid.innerHTML = '';
                 
-                // Reset temporary data
                 state.tempCalendarData = { billing: {}, paid: {} };
 
                 const firstDay = new Date(year, month, 1).getDay();
@@ -1115,9 +1072,7 @@
                 
                 const allTenants = state.sections.flatMap(s => s.tenants);
                 
-                // Process and store all relevant calendar events for the current view
                 allTenants.forEach(tenant => {
-                    // 1. Upcoming billing events
                     if (tenant.currentBillingDate) {
                         const billingDate = new Date(tenant.currentBillingDate);
                         if (billingDate.getUTCFullYear() === year && billingDate.getUTCMonth() === month) {
@@ -1126,7 +1081,6 @@
                             state.tempCalendarData.billing[day].push({ tenant });
                         }
                     }
-                    // 2. Historical paid events
                     if (tenant.paymentHistory) {
                         tenant.paymentHistory.forEach(entry => {
                             const paidDate = new Date(entry.paidOn);
@@ -1213,7 +1167,6 @@
                     cellCount++;
                 }
             }
-            /** Gets tenant billing calculations. */
             function getBillingInfo(tenant) {
                 let elecUsage = 0;
                 const elecCurrentNum = parseFloat(tenant.elecCurrent);
@@ -1221,28 +1174,27 @@
                 if (!isNaN(elecCurrentNum) && elecCurrentNum >= elecPrevNum) {
                     elecUsage = elecCurrentNum - elecPrevNum;
                 }
-            
+                
                 let waterUsage = 0;
                 const waterCurrentNum = parseFloat(tenant.waterCurrent);
                 const waterPrevNum = parseFloat(tenant.waterPrev || 0);
                 if (!isNaN(waterCurrentNum) && waterCurrentNum >= waterPrevNum) {
                     waterUsage = waterCurrentNum - waterPrevNum;
                 }
-            
+                
                 const elecBilling = elecUsage * state.rates.electricity;
                 const waterBilling = waterUsage * state.rates.water;
                 const parkingBilling = (tenant.vehicles?.length || 0) * state.rates.parking;
                 const totalBilling = elecBilling + waterBilling + parseFloat(tenant.rent || 0) + parseFloat(tenant.other || 0) + parkingBilling;
                 return { elecBilling, waterBilling, parkingBilling, totalBilling };
             }
-            /** Determines the status badge for a tenant. */
             function getStatusInfo(tenant) {
                 if (!tenant.name) return { badgeHTML: '', showActionButtons: false, showPaidButton: false };
 
                 const now = new Date();
                 const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
                 const currentBillingDateObj = tenant.currentBillingDate ? new Date(tenant.currentBillingDate) : null;
-                                let badgeText = 'Paid';
+                        let badgeText = 'Paid';
                 let badgeClass = 'status-paid';
                 let showActionButtons = false;
 
@@ -1260,17 +1212,15 @@
                         showActionButtons = true;
                     }
                 }
-                                const badgeHTML = `<span class="tenant-status-badge ${badgeClass}">${badgeText}</span>`;
+                        const badgeHTML = `<span class="tenant-status-badge ${badgeClass}">${badgeText}</span>`;
                 const showPaidButton = showActionButtons && tenant.elecCurrent && tenant.waterCurrent;
 
                 return { badgeHTML, showActionButtons, showPaidButton };
             }
-            /** Creates the HTML for the expanded details of a tenant. */
             function createTenantExpandedDetailsHTML(tenant, billingInfo, statusInfo) {
                 const { elecBilling, waterBilling, parkingBilling, totalBilling } = billingInfo;
                 const { showActionButtons, showPaidButton } = statusInfo;
-                                // Document Details
-                let documentDetails = '';
+                        let documentDetails = '';
                 if (tenant.nationality === 'Local') {
                     const idExpiryClass = isDateExpiring(tenant.idExpiry) ? 'class="expiring-date"' : '';
                     documentDetails = `<span ${idExpiryClass}>ID Expiry: ${formatDate(tenant.idExpiry)}</span>`;
@@ -1281,14 +1231,12 @@
                         <span ${passportExpiryClass}>Passport Expiry: ${formatDate(tenant.passportExpiry)}</span>
                         <span ${visaExpiryClass}>Visa Expiry: ${formatDate(tenant.visaExpiry)}</span>`;
                 }
-                                // Other Details
-                const leaseEndClass = isDateExpiring(tenant.leaseEnd) ? 'class="expiring-date"' : '';
+                        const leaseEndClass = isDateExpiring(tenant.leaseEnd) ? 'class="expiring-date"' : '';
                 const contactDetails = tenant.nationality === 'Local'
-                     ? `<span>Phone: ${tenant.phone}</span><span>Pax: ${tenant.pax || ''}</span>`
-                     : `<span>Phone: ${tenant.phone}</span><span>FPCS Registry: ${tenant.fpcs}</span><span>Pax: ${tenant.pax || ''}</span>`;
+                       ? `<span>Phone: ${tenant.phone}</span><span>Pax: ${tenant.pax || ''}</span>`
+                       : `<span>Phone: ${tenant.phone}</span><span>FPCS Registry: ${tenant.fpcs}</span><span>Pax: ${tenant.pax || ''}</span>`;
                 const vehicleListHTML = tenant.vehicles?.length > 0 ? `<span>${tenant.vehicles.join('<br>')}</span>` : '';
-                                // Action Buttons
-                const historyButtonHTML = tenant.paymentHistory?.length > 0 ? '<button class="history-btn">History</button>' : '';
+                        const historyButtonHTML = tenant.paymentHistory?.length > 0 ? '<button class="history-btn">History</button>' : '';
                 const billButtonHTML = showActionButtons ? '<button class="bill-btn">Bill</button>' : '';
                 const paidButtonHTML = showPaidButton ? '<button class="paid-btn">Paid</button>' : '';
 
@@ -1308,18 +1256,17 @@
                     </div>`;
             }
 
-            /** Creates a tenant list item element. */
             function createTenantListItem(tenant) {
                 const billingInfo = getBillingInfo(tenant);
                 const statusInfo = getStatusInfo(tenant);
                 const expandedDetailsHTML = createTenantExpandedDetailsHTML(tenant, billingInfo, statusInfo);
-                                const listItem = document.createElement('li');
+                        const listItem = document.createElement('li');
                 listItem.className = 'tenant-item';
                 listItem.dataset.tenantId = tenant.id;
                 if (tenant.id === state.currentlyExpandedTenantId) {
                     listItem.classList.add('expanded');
                 }
-                                listItem.innerHTML = `
+                        listItem.innerHTML = `
                     <div class="tenant-summary">
                         <div class="tenant-details">
                             <span class="tenant-name">${tenant.name || 'No Name Assigned'}</span>
@@ -1331,7 +1278,6 @@
                 return listItem;
             }
 
-            /** Creates a section element with its tenants. */
             function createSectionElement(section) {
                 const sectionDiv = document.createElement('div');
                 sectionDiv.className = 'floor-container';
@@ -1348,7 +1294,6 @@
                 sectionDiv.append(header, tenantList);
                 return sectionDiv;
             }
-            /** Renders the entire application based on the current state. */
             function render() {
                 DOM.sectionsContainer.innerHTML = '';
                 state.sections.forEach(section => {
@@ -1358,14 +1303,11 @@
                 renderOverview();
             }
 
-            // #################################################################
-            // ##                      MODAL & CONTEXT MENU                   ##
-            // #################################################################
             let currentValidationHandler = null;
             function createModalField(field, initialValue = '') {
                 const group = document.createElement('div');
                 group.className = 'input-group';
-                                if (field.type === 'vehicles') {
+                        if (field.type === 'vehicles') {
                     group.innerHTML = `<div class="input-group-header"><label for="${field.id}">${field.label}</label><button type="button" id="add-vehicle-btn">+ add vehicle</button></div>`;
                     const vehicleContainer = document.createElement('div');
                     vehicleContainer.id = 'vehicle-input-container';
@@ -1496,13 +1438,13 @@
                         nationalityRadios.forEach(radio => radio.addEventListener('change', () => updateDynamicEditFields(initialValues)));
                         updateDynamicEditFields(initialValues);
                     }
-                                        const nameInput = DOM.modalInputsContainer.querySelector('#name');
+                                    const nameInput = DOM.modalInputsContainer.querySelector('#name');
                     const paxInput = DOM.modalInputsContainer.querySelector('#pax');
                     if (nameInput && paxInput) {
                         nameInput.addEventListener('input', () => {
                             if (nameInput.value.trim() && (!paxInput.value.trim() || paxInput.value.trim() === '0')) {
                                 paxInput.value = '1';
-                                paxInput.dispatchEvent(new Event('input', { bubbles: true })); // Trigger validation
+                                paxInput.dispatchEvent(new Event('input', { bubbles: true })); 
                             }
                         });
                     }
@@ -1530,7 +1472,7 @@
                             document.getElementById(`${rule.fieldId}-error`).textContent = rule.message;
                         }
                     });
-                                        DOM.modalSaveBtn.disabled = !isAllValid;
+                                    DOM.modalSaveBtn.disabled = !isAllValid;
                 };
 
                 if (requiredFields.length > 0 || validationRules.length > 0) {
@@ -1598,9 +1540,6 @@
                 DOM.contextMenu.style.display = 'none';
             }
 
-            // #################################################################
-            // ##                         EVENT HANDLERS                      ##
-            // #################################################################
             function handleDayClick(day, type) {
                 const events = state.tempCalendarData[type]?.[day] || [];
                 if (events.length === 0) return;
@@ -1665,16 +1604,15 @@
                     ],
                     initialValues: initialValues,
                     onSave: (values) => {
-                        if (!state.expenses[expenseKey]) {
-                            state.expenses[expenseKey] = {};
-                        }
-                        state.expenses[expenseKey].salary = parseFloat(values.salary) || 0;
-                        state.expenses[expenseKey].maintenance = parseFloat(values.maintenance) || 0;
-                        state.expenses[expenseKey].tax = parseFloat(values.tax) || 0;
-                        state.expenses[expenseKey].other = parseFloat(values.other) || 0;
-                        
+                        const newValues = {
+                            salary: parseFloat(values.salary) || 0,
+                            maintenance: parseFloat(values.maintenance) || 0,
+                            tax: parseFloat(values.tax) || 0,
+                            other: parseFloat(values.other) || 0,
+                        };
+                        state.expenses[expenseKey] = newValues;
                         renderOverview();
-                        saveDataToSheet();
+                        sendActionToServer('UPDATE_EXPENSES', { key: expenseKey, values: newValues });
                     }
                 });
             }
@@ -1685,9 +1623,10 @@
                     fields: [{ id: 'sectionName', label: 'Section Name', placeholder: "e.g., 'Floor 2'" }],
                     requiredFields: ['sectionName'],
                     onSave: (values) => {
-                        state.sections.push({ id: state.nextSectionId++, name: values.sectionName, tenants: [] });
+                        const newSection = { id: state.nextSectionId++, name: values.sectionName, tenants: [] };
+                        state.sections.push(newSection);
                         render();
-                        saveDataToSheet();
+                        sendActionToServer('ADD_SECTION', { id: newSection.id, name: newSection.name });
                     }
                 });
             }
@@ -1707,26 +1646,26 @@
                         state.rates.water = Math.max(0, parseFloat(newRates.water)) || 0;
                         state.rates.parking = Math.max(0, parseFloat(newRates.parking)) || 0;
                         render();
-                        saveDataToSheet();
+                        sendActionToServer('UPDATE_RATES', state.rates);
                     }
                 });
             }
-          function handleAddUnitClick(sectionId) {
-    const section = state.sections.find(s => s.id === sectionId);
-    if (section) {
-        showModal({
-            title: `Add Unit to ${section.name}`,
-            fields: [{ id: 'unitNumber', label: 'Unit Number', placeholder: "e.g., '101' or 'A-01'" }], // Modified line
-            requiredFields: ['unitNumber'],
-            onSave: (values) => {
-                const newTenant = { ...state.defaultTenantState, id: state.nextTenantId++, unit: values.unitNumber, paymentHistory: [], sectionId: section.id };
-                section.tenants.push(newTenant);
-                render();
-                saveDataToSheet();
-                        }
-                    });
-                }
+        function handleAddUnitClick(sectionId) {
+            const section = state.sections.find(s => s.id === sectionId);
+            if (section) {
+                showModal({
+                    title: `Add Unit to ${section.name}`,
+                    fields: [{ id: 'unitNumber', label: 'Unit Number', placeholder: "e.g., '101' or 'A-01'" }],
+                    requiredFields: ['unitNumber'],
+                    onSave: (values) => {
+                        const newTenant = { ...state.defaultTenantState, id: state.nextTenantId++, unit: values.unitNumber, paymentHistory: [], sectionId: section.id };
+                        section.tenants.push(newTenant);
+                        render();
+                        sendActionToServer('ADD_TENANT', newTenant);
+                    }
+                });
             }
+        }
             function handleSummaryClick(tenantId) {
                 state.currentlyExpandedTenantId = (state.currentlyExpandedTenantId === tenantId) ? null : tenantId;
                 render();
@@ -1778,8 +1717,8 @@
                         if (newValues.leaseStart && newValues.tenure) {
                            newValues.leaseEnd = calculateLeaseEndDate(newValues.leaseStart, newValues.tenure);
                         }
-                        if (newValues.leaseStart !== tenant.leaseStart) {
-                            newValues.currentBillingDate = calculateFirstBillingDate(newValues.leaseStart);
+                        if (newValues.leaseStart !== tenant.leaseStart && (!tenant.paymentHistory || tenant.paymentHistory.length === 0)) {
+                             newValues.currentBillingDate = calculateFirstBillingDate(newValues.leaseStart);
                         }
                         if (newValues.nationality === 'Local') {
                             Object.assign(newValues, { passportExpiry: '', visaExpiry: '', fpcs: 'No' });
@@ -1788,7 +1727,7 @@
                         }
                         Object.assign(tenant, newValues);
                         render();
-                        saveDataToSheet();
+                        sendActionToServer('UPDATE_TENANT', tenant);
                     },
                     onCancel: onCancelOverride
                 });
@@ -1808,15 +1747,15 @@
                           const elecUsage = (tenant.elecCurrent || 0) - (tenant.elecPrev || 0);
                           const waterUsage = (tenant.waterCurrent || 0) - (tenant.waterPrev || 0);
                         const historyEntry = {
-                            billingDate: tenant.currentBillingDate, // Record the original billing date
-                            paidOn: new Date().toISOString().split('T')[0], // Record the actual paid date
+                            billingDate: tenant.currentBillingDate, 
+                            paidOn: new Date().toISOString().split('T')[0], 
                             elecUsage: `${elecUsage} Kwh`, waterUsage: `${waterUsage} m³`,
                             rent: parseFloat(tenant.rent || 0), other: parseFloat(tenant.other || 0), parking: parkingBilling,
                             totalPaid: totalBilling
                         };
-                                                if (!tenant.paymentHistory) tenant.paymentHistory = [];
+                                        if (!tenant.paymentHistory) tenant.paymentHistory = [];
                         tenant.paymentHistory.push(historyEntry);
-                                                Object.assign(tenant, {
+                                        Object.assign(tenant, {
                             currentBillingDate: calculateNextBillingDate(tenant.currentBillingDate, tenant.leaseStart),
                             elecPrev: tenant.elecCurrent,
                             waterPrev: tenant.waterCurrent,
@@ -1826,7 +1765,7 @@
                         });
 
                         render();
-                        saveDataToSheet();
+                        sendActionToServer('UPDATE_TENANT', tenant);
                     }
                 });
             }
@@ -1851,7 +1790,7 @@
                         tenant.waterCurrent = parseFloat(newReadings.waterCurrent) || tenant.waterPrev;
                         tenant.other = Math.max(0, parseFloat(newReadings.other)) || 0;
                         render();
-                        saveDataToSheet();
+                        sendActionToServer('UPDATE_TENANT', tenant);
                     }
                 });
             }
@@ -1882,7 +1821,7 @@
                         <thead><tr><th>Paid Date</th><th>Elec.</th><th>Water</th><th>Rent</th><th>Other</th><th>Parking</th><th>Total</th></tr></thead>
                         <tbody>${historyRows}</tbody>
                     </table>`;
-                                showModal({
+                        showModal({
                     title: `Payment History: ${tenant.name}`,
                     isConfirmation: true,
                     confirmationText: historyHtml,
@@ -1903,7 +1842,7 @@
                             tenant[key] = state.defaultTenantState[key];
                         });
                         render();
-                        saveDataToSheet();
+                        sendActionToServer('CLEAR_TENANT_DATA', { tenantId });
                     }
                 });
             }
@@ -1916,7 +1855,7 @@
                     onSave: () => {
                         section.tenants = section.tenants.filter(t => t.id !== tenantId);
                         render();
-                        saveDataToSheet();
+                        sendActionToServer('DELETE_TENANT', { tenantId });
                     }
                 });
             }
@@ -1929,7 +1868,7 @@
                     onSave: () => {
                         state.sections = state.sections.filter(s => s.id !== sectionId);
                         render();
-                        saveDataToSheet();
+                        sendActionToServer('DELETE_SECTION', { sectionId });
                     }
                 });
             }
@@ -1966,7 +1905,7 @@
                 const { tenant } = findTenant(tenantId);
                 if (!tenant) return;
                 const originalLeaseData = { leaseStart: tenant.leaseStart, leaseEnd: tenant.leaseEnd, tenure: tenant.tenure, currentBillingDate: tenant.currentBillingDate };
-                                showModal({
+                        showModal({
                     title: "Confirm Renewal", isConfirmation: true,
                     confirmationText: "Are you sure you want to renew this lease? This will clear the current lease start, tenure, and billing date fields, allowing you to enter new ones.",
                     onSave: () => {
@@ -1983,14 +1922,13 @@
                     onCancel: () => { handleEditClick(tenantId); return false; },
                 });
             }
-            // #################################################################
-            // ##                    INITIALIZATION & BINDING                 ##
-            // #################################################################
             function init() {
                 loadDataFromSheet().then(() => {
-                    render(); // Initial render after data is loaded
+                    render(); 
                 });
                 
+                setInterval(loadDataFromSheet, 30000);
+
                 DOM.sectionsContainer.addEventListener('click', (event) => {
                     const target = event.target;
                     const tenantItem = target.closest('.tenant-item');
@@ -2065,7 +2003,7 @@
                         event.target.closest('.vehicle-input-group').remove();
                     }
                 });
-                                DOM.prevMonthBtn.addEventListener('click', () => {
+                        DOM.prevMonthBtn.addEventListener('click', () => {
                     state.calendarDate.setMonth(state.calendarDate.getMonth() - 1);
                     renderCalendar();
                     renderOverview();
@@ -2077,7 +2015,6 @@
                     renderOverview();
                 });
 
-                // Global listeners
                 window.addEventListener('click', (e) => {
                     if (!DOM.contextMenu.contains(e.target)) {
                         hideContextMenu();
